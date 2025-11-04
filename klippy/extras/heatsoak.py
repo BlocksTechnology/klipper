@@ -23,7 +23,11 @@ class Heatsoak:
             self.stabilize_check, self.reactor.NEVER
         )
 
+    def wait_heat(self):
+        eventtime = self.reactor.monotonic()
+        
     def stabilize_check(self): ...
+
     def cmd_HEATSOAK(self, gcmd): ...
 
     def get_status(self):
