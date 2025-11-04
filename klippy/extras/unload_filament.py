@@ -341,6 +341,10 @@ class UnloadFilament:
             )
 
     def save_unload_state(self):
+        """Save current unload state to disk
+
+        This method saved the value with SAVE_VARIABLE gcode
+        """
         self.gcode.run_script_from_command(
             f"SAVE_VARIABLE VARIABLE={self.control_variable} VALUE=False"
         )
