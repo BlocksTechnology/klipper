@@ -342,7 +342,7 @@ class UnloadFilament:
 
     def save_unload_state(self):
         self.gcode.run_script_from_command(
-            f"SAVE_VARIABLE VARIABLE={self.control_variable} VALUE=True"
+            f"SAVE_VARIABLE VARIABLE={self.control_variable} VALUE=False"
         )
 
     def get_status(self, eventtime):
