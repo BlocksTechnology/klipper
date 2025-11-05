@@ -14,6 +14,7 @@ class Heatsoak:
         self.heater = None
         self.pheaters = None
         self.temperature_sensor = None
+        self.fan_obj = None
         self.heater_name = config.get("heater", "heater_bed")
         self.stabilization_type = config.getchoice(
             "stabilization_mode", choices=["time", "goal"], default=""
@@ -43,6 +44,8 @@ class Heatsoak:
                 self.temperature_sensor_name
             )
 
+        self.fan_obj = self.printer.lookup_object("fan_generic Auxiliary_Cooling_Fans")
+
     def stabilize_heat(
         self, temperature: int, limit_time: int = 20, threshold: int = 5
     ):
@@ -63,7 +66,9 @@ class Heatsoak:
         reactor = self.printer.get_reactor()
         toolhead = self.printer.lookup_object("toolhead")
         eventtime = reactor.monotonic()
-        # while not self.printer.is_shutdown() and self.heater.check_busy(eventtime):
+        if self.fan_obj:
+            self.fan_obj.set_speed(0.5)
+
         while not self.printer.is_shutdown():
             curr_temp, _ = self.heater.get_temp(eventtime)
             # if self.stabilization_type == "goal":
@@ -89,6 +94,8 @@ class Heatsoak:
 
             if target_time != self.reactor.monotonic():
                 self.state = "finished"
+                if self.fan_obj:
+                    self.fan_obj.set_speed(0)
                 return
             print_time = toolhead.get_last_move_time()
             self.gcode.respond_raw("Stabilizing")
