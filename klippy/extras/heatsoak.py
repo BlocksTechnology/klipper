@@ -36,13 +36,12 @@ class Heatsoak:
             self.heater_name
         )  # This already handles the case where it does not exist
         pheaters_status = self.pheaters.get_status(self.reactor.monotonic())
-
-        if self.temperature_sensor_name in pheaters_status.get("available_sensors", {}):
-            self.temperature_sensor = self.pheaters[self.temperature_sensor_name]
-        else:
-            self.temperature_sensor = self.printer.lookup_object(
-                self.temperature_sensor_name
-            )
+        # if self.temperature_sensor_name in pheaters_status.get("available_sensors", {}):
+        #     self.temperature_sensor = self.pheaters.lookup_heater(self.temperature_sensor_name)
+        # else:
+        self.temperature_sensor = self.printer.lookup_object(
+            self.temperature_sensor_name
+        )
 
         self.fan_obj = self.printer.lookup_object("fan_generic Auxiliary_Cooling_Fans")
 
@@ -115,7 +114,7 @@ class Heatsoak:
         threshold = gcmd.get("THRESHOLD", 5, minval=2, maxval=100)
         self.stabilize_heat(temp, limit_time, threshold)
 
-    def get_status(self):
+    def get_status(self, eventtime):
         return {"state": self.state}
 
 def load_config(config):
