@@ -366,7 +366,7 @@ class CutterSensor:
         try:
             if not self.toolhead:
                 return
-            if not self.custom_boundary_object:
+            if self.custom_boundary_object:
                 self.gcode.respond_info("Restoring original printer Boundaries.")
                 self.custom_boundary_object.restore_default_boundary()
 
