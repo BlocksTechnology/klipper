@@ -67,7 +67,7 @@ class Heatsoak:
         toolhead = self.printer.lookup_object("toolhead")
         eventtime = reactor.monotonic()
         if self.fan_obj:
-            self.fan_obj.set_speed(0.5)
+            self.fan_obj.fan.set_speed(0.5)
 
         while not self.printer.is_shutdown():
             curr_temp, _ = self.heater.get_temp(eventtime)
@@ -95,7 +95,7 @@ class Heatsoak:
             if target_time != self.reactor.monotonic():
                 self.state = "finished"
                 if self.fan_obj:
-                    self.fan_obj.set_speed(0)
+                    self.fan_obj.fan.set_speed(0)
                 return
             print_time = toolhead.get_last_move_time()
             self.gcode.respond_raw("Stabilizing")
