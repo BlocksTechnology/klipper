@@ -117,3 +117,6 @@ class Heatsoak:
 
     def get_status(self):
         return {"state": self.state}
+
+def load_config(config):
+    return Heatsoak(config)
