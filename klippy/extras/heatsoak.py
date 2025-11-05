@@ -28,9 +28,6 @@ class Heatsoak:
         self.gcode.register_command(
             "HEATSOAK", self.cmd_HEATSOAK, "Heat and stabilize chamber temperature"
         )
-        # self.stabilize_timer = self.reactor.register_timer(
-        #     self.stabilize_check, self.reactor.NEVER
-        # )
 
     def handle_ready(self):
         self.pheaters = self.printer.lookup_object("heaters")
@@ -108,7 +105,8 @@ class Heatsoak:
     def cmd_HEATSOAK(self, gcmd):
         temp = gcmd.get("TEMPERATURE", 50, minval=15, maxval=100)
         limit_time = gcmd.get("TIME", 20, minval=15, maxval=120)  # In minutes
-        self.stabilize_heat(temp, limit_time)
+        threshold = gcmd.get("THRESHOLD", 5, minval=2, maxval=100)
+        self.stabilize_heat(temp, limit_time, threshold)
 
     def get_status(self):
         return {"state": self.state}
