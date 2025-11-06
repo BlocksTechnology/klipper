@@ -60,6 +60,7 @@ class Heatsoak:
                 specified sensor
         """
         self.state = "initializing"
+        self.printer.send_event("heatsoak:start")
         self.pheaters.set_temperature(self.heater, temperature, True)
         target_time = self.reactor.monotonic() + (limit_time * 60)  # convert to seconds
         reactor = self.printer.get_reactor()
@@ -67,10 +68,9 @@ class Heatsoak:
         eventtime = reactor.monotonic()
         if self.fan_obj:
             self.fan_obj.fan.set_speed(0.5)
-
+        timer = 0
         while not self.printer.is_shutdown():
             curr_temp, _ = self.heater.get_temp(eventtime)
-            # if self.stabilization_type == "goal":
             reported_sensor_temp = self.temperature_sensor.get_status(eventtime).get(
                 "temperature", None
             )
@@ -91,22 +91,20 @@ class Heatsoak:
             ):
                 target_time += 300  # Increase goal time by 5 minutes
 
-            if target_time != self.reactor.monotonic():
+            if target_time == self.reactor.monotonic():
                 self.state = "finished"
                 if self.fan_obj:
                     self.fan_obj.fan.set_speed(0)
+                self.printer.send_event("heatsoak:finish")
                 return
             print_time = toolhead.get_last_move_time()
-            self.gcode.respond_raw("Stabilizing")
             self.gcode.respond_raw(
-                "Stabilizing Chamber | Temp: %.1f | hum: %.1f"
-                % (
-                    reported_sensor_temp,
-                    reported_sensor_hum if reported_sensor_hum else "Not Reported",
-                )
+                f"Stabilizing Chamber Time: {timer}| Temp: {reported_sensor_temp} | hum: {reported_sensor_hum}"
             )
             self.state = "stabilizing"
+            self.printer.send_event("heatsoak:stabilizing")
             eventtime = reactor.pause(eventtime + 1.0)
+            timer += 1
 
     def cmd_HEATSOAK(self, gcmd):
         temp = gcmd.get("TEMPERATURE", 50, minval=15, maxval=100)
@@ -116,6 +114,7 @@ class Heatsoak:
 
     def get_status(self, eventtime):
         return {"state": self.state}
+
 
 def load_config(config):
     return Heatsoak(config)
