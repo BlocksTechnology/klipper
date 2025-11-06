@@ -54,4 +54,4 @@ class PrintCore:
 
 
 def load_config(config):
-    return PrintCore
+    return PrintCore(config)
