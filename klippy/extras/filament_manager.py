@@ -86,7 +86,6 @@ class ExtruderMotions:
         self.reactor = self.printer.get_reactor()
         self.gcode = self.printer.lookup_object("gcode")
         self.is_heated = False
-        self.printer.register_event_handler("klippy:ready", self.handle_ready)
         self.toolhead = self.pheaters = self.extruder_heater = None
         self.travel_speed = config.getfloat(
             "mov_speed", default=100.0, minval=50.0, maxval=500.0
@@ -136,7 +135,7 @@ class ExtruderMotions:
         v = distance * gcode_move.get_status(eventtime)["extrude_factor"]
         new_distance = v + prev_position[3]
         self.toolhead.manual_move(
-            [prev_position[0], prev_position[1], prev_position[2], new_distance]
+            [prev_position[0], prev_position[1], prev_position[2], new_distance], speed
         )
         if wait:
             self.toolhead.wait_moves()
@@ -146,89 +145,84 @@ class ExtruderMotions:
         self.current_extruder = self.toolhead.get_extruder()
         if not self.is_heated and self.current_extruder != self.extruder:
             return
-        pass
 
 
 class FilamentMotions:
-    # TODO: Received filament sensors, checks filament presences
-    def __init__(self, config):
+    def __init__(self, config, name, extruder):
         self.printer = config.get_printer()
+        self.name = name
         self.reactor = self.printer.get_reactor()
-        self.cutter_name = config.get("cutter_sensor_name", None)
-        self.filament_switch_sensor_name = config.get(
-            "filament_switch_sensor_name", None
-        )
-        self.verify_switch_sensor_timer = self.reactor.register_timer(
-            self.verify_switch_state, self.reactor.NEVER
-        )
+        self.toolhead = None
+        self.gcode = self.printer.lookup_object("gcode")
         self.printer.register_event_handler("klippy:ready", self.handle_ready)
-        self.cutter_object = self.filament_switch_sensor_object = None
+        self.extruder_motion = ExtruderMotions(config, extruder)
 
     def handle_ready(self) -> None:
-        pass
+        """Handle `klippy:ready` event"""
+        self.toolhead = self.printer.lookup_object("toolhead")
 
-    def _unload_end(self, eventtime=None):
-        if not self._unload_started:
-            return self.reactor.NEVER
-
-        self._unload_started = False
-        self._unextrude_count = 0
-
-    def do_unextrude(self, eventtime) -> None:
-        if not self._unload_started and not self._load_started:
-            return self.reactor.NEVER
-
-        if self.unload_timeout:
-            if self._unextrude_count >= self.unload_timeout:
-                self.reactor.update_timer(
-                    self.sensors.verify_switch_sensor_timer, self.reactor.NEVER
-                )
-                completion = self.reactor.register_callback(self._unload_end)
-                return completion.wait()
-            self._unextrude_count += 1
-            self._move_extruder(distance=-10.0, speed=self.extruder_speed, wait=False)
-            return float(eventtime + float(10 / self.extruder_speed))
-
-    def do_extrude(self, eventtime) -> None:
-        pass
-
-    def do_change_filament(self, eventtime) -> None:
-        pass
+    def jitter(self) -> None:
+        """Makes the extruder stepper buz for identification"""
+        self.gcode.respond_info(f"Jittering {self.name}... Check for sound")
+        self.gcode.run_script_from_command(f"STEPPER_BUZZ STEPPER={self.name}\n")
 
 
 class FilamentManager:
     def __init__(self, config):
         self.printer = config.get_printer()
-        self.name = config.get_name().split()[-1]
         self.reactor = self.printer.get_reactor()
-        self.gcode = self.printer.lookup_gcode("gcode")
-        self.printer.register_event_handler("klippy:connect", self.handle_connect)
-        self.printer.register_event_handler("klippy:ready", self.handle_ready)
+        self.gcode = self.printer.lookup_object("gcode")
+        self.toolhead = self.extruder_objects = None
+        self.config = config
+        self.controllable_motions: dict = {}
 
-        self.motions = ExtruderMotions(config)
-        self.fil_motions = FilamentMotions(config)
-
-    def handle_connect(self) -> None:
-        self.toolhead = self.printer.lookup_object("toolhead")
+        self.gcode.register_command(
+            "QUERY_CONTROLLABLES",
+            self.cmd_QUERY_CONTROLLABLES,
+            "Returns the controllable filament toolheads",
+        )
+        self.gcode.register_command(
+            "IDENTIFY", self.cmd_IDENTIFY, "Identify controllable filament extruders"
+        )
 
     def handle_ready(self) -> None:
-        # TODO: Maybe check if filament is actually present and then update local variables
-        ...
+        """Handle `klippy:ready` events"""
+        self.toolhead = self.printer.lookup_object("toolhead")
+        self.extruder_objects = self.printer.lookup_objects("extruder")
+        for name, extruder in self.extruder_objects:
+            self.controllable_motions.update(
+                {f"{name}": FilamentMotions(self.config, name, extruder)}
+            )
+            self.gcode.respond_info(
+                f"NEW CONTROLLABLE FILAMENT EXTRUDER : {name}, {str(extruder)}"
+            )
+
+    def cmd_IDENTIFY(self, gcmd) -> None:
+        for _, controllable in self.controllable_motions.items():
+            controllable.jitter()
+
+    def cmd_QUERY_CONTROLLABLES(self, gcmd) -> None:
+        self.extruder_objects = self.printer.lookup_objects("extruder")
+        for name, extruder in self.extruder_objects:
+            self.controllable_motions.update(
+                {f"{name}": FilamentMotions(self.config, name, extruder)}
+            )
+        self.gcode.respond_info(
+            f"Available controllables: \n {self.controllable_motions}"
+        )
 
     def cmd_LOAD_FILAMENT(self, gcmd) -> None:
-        tool = gcmd.get("TOOLHEAD")
-        self.fil_motions.load_filament()
-        pass
+        raise NotImplementedError()
 
     def cmd_UNLOAD_FILAMENT(self, gcmd) -> None:
-        pass
+        raise NotImplementedError()
 
     def cmd_CHANGE_FILAMENT(self, gcmd) -> None:
-        pass
+        raise NotImplementedError()
 
-    def get_status(self, eventtime) -> None:
-        return {"state": self.state}
+    # def get_status(self) -> dict:
+    #     return {motion.get_status for motion in self.controllable_motions}
 
 
-def load_config_prefix(config):
+def load_config(config):
     return FilamentManager(config)
