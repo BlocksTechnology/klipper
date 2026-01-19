@@ -82,8 +82,9 @@ class SensorChecker:
 
 
 class ExtruderMotions:
-    def __init__(self, config, extruder):
+    def __init__(self, config, extruder, name):
         self.printer = config.get_printer()
+        self.name = name
         self.reactor = self.printer.get_reactor()
         self.gcode = self.printer.lookup_object("gcode")
         self.pheaters = self.extruder_heater = None
@@ -93,7 +94,6 @@ class ExtruderMotions:
         self.extruder_speed = config.getfloat(
             "extruder_speed", default=10.0, minval=2.0, maxval=50.0
         )
-
         self.printer.register_event_handler("klippy:ready", self.handle_ready)
         self.extruder = extruder
         self.old_extruder = None
@@ -101,13 +101,18 @@ class ExtruderMotions:
     def handle_ready(self) -> None:
         """Handle `klippy:ready` events"""
         logging.info(type(self.extruder))
+        self.old_extruder = self.printer.lookup_object("toolhead").get_extruder()
+
+    def _force_enable(self) -> None:
+        stepper_enable = self.printer.lookup_object("stepper_enable")
+        did_enable = stepper_enable.set_motors_enable([self.name], None)
 
     def _force_activate(self) -> None:
-        self.old_extruder = self.printer.lookup_object("toolhead").get_extruder()
-        toolhead = self.printer.lookup_object("toolhead")
         if self.extruder != self.old_extruder:
+            self.old_extruder = self.printer.lookup_object("toolhead").get_extruder()
+            toolhead = self.printer.lookup_object("toolhead")
             toolhead.flush_step_generation()
-            last_position = self.extruder.extruder_setpper.find_past_position(
+            last_position = self.extruder.extruder_stepper.find_past_position(
                 self.reactor.monotonic()
             )
             toolhead.set_extruder(self.extruder, last_position)
@@ -145,30 +150,18 @@ class ExtruderMotions:
             raise self.printer.command_error("Extruder below minimum temperature")
         self._force_activate()
         eventtime = self.reactor.monotonic()
-        toolhead = self.printer.lookup_object("toolhead")
+        force_move = self.printer.lookup_object("force_move")
         mcu = self.printer.lookup_object("mcu")
         est_print_time = mcu.estimated_print_time(eventtime)
         prev_position = self.extruder.find_past_position(est_print_time)
         # Ignore extrude factor always 1 in this case.
         npos = prev_position + distance
-        self.gcode.respond_info(f"old position: {prev_position} | new position {npos}")
-        toolhead.manual_move(
-            [None, None, None, npos],
+        force_move.manual_move(
+            self.extruder.extruder_stepper.stepper,
+            npos,
+            distance,
             speed,
         )
-        self.gcode.respond_info(f"After movement position {toolhead.get_position()}")
-        # oldpos = toolhead.get_position()
-        # oldpos[-1] = prev_position
-        # toolhead.commanded_pos[-1] = prev_position
-        # toolhead.set_position(oldpos)
-        # self.gcode.respond_info(
-        #     f"After resetting old positions {toolhead.get_position()}"
-        # )
-        # toolhead.set_position([toolhead.get_position()[:3], prev_position])
-        gmove = self.printer.lookup_object("gcode_move")
-        gmove.reset_last_position
-        if wait:
-            toolhead.wait_moves()
 
 
 class FilamentMotions:
@@ -179,14 +172,29 @@ class FilamentMotions:
         self.toolhead = None
         self.gcode = self.printer.lookup_object("gcode")
         self.printer.register_event_handler("klippy:ready", self.handle_ready)
-        self.extruder_motion = ExtruderMotions(config, extruder)
+        self.extruder_motion = ExtruderMotions(config, extruder, name)
 
     def handle_ready(self) -> None:
         """Handle `klippy:ready` event"""
         self.toolhead = self.printer.lookup_object("toolhead")
 
+    def do_cut(self) -> None:
+        self.gcode.respond_info("Cutting filament on toolhead")
+        self.toolhead.dwell(1.0)
+
+    def do_unextrude(self) -> None:
+        self.gcode.respond_info("Unloading")
+        self.toolhead.dwell(1.0)
+
+    def do_purge(self) -> None:
+        self.toolhead.dwell(1.0)
+
+    def toggle_filament_sensors(self) -> None:
+        self.toolhead.dwell(1.0)
+
     def do_extrude(self) -> None:
-        self.extruder_motion._move_extruder(10, 60, False)
+        self.extruder_motion._move_extruder(10, 20, False)
+        self.toolhead.dwell(1.0)
 
     def jitter(self) -> None:
         """Makes the extruder stepper buz for identification"""
@@ -233,6 +241,34 @@ class FilamentManager:
         if "xyz" in homed_axes.lower():
             return
         self.gcode.run_script_from_command("G28")
+
+    def save_idex_state(self) -> None:
+        """Save Idex carriage states"""
+        self.gcode.respond_info("Save carriage state")
+        carriages = self.printer.lookup_object("dual_carriages")
+        carriages.cmd_SAVE_DUAL_CARRIAGE_STATE({"FILAMENT_MANAGER_CARRIAGE_STATE"})
+        self.toolhead.dwell(1.0)
+
+    def restore_idex_state(self) -> None:
+        """Restore Idex carriage states"""
+        self.gcode.respond_info("Restoring carriage state")
+        carriages = self.printer.lookup_object("dual_carriages")
+        carriages.cmd_RESTORE_DUAL_CARRIAGE_STATE({"FILAMENT_MANAGER_CARRIAGE_STATE"})
+        self.toolhead.dwell(1.0)
+
+    def save_printer_state(self) -> None:
+        """Saves printer gcode state"""
+        self.gcode.respond_info("Saving printer state")
+        gcode_move = self.printer.lookup_object("gcode_move")
+        gcode_move.cmd_SAVE_GCODE_STATE({"FILAMENT_MANAGER_STATE"})
+        self.toolhead.dwell(1.0)
+
+    def restore_printer_state(self) -> None:
+        """Restores printer gcode state"""
+        self.gcode.respond_info("Restoring printer state")
+        gcode_move = self.printer.lookup_object("gcode_move")
+        gcode_move.cmd_RESTORE_GCODE_STATE({"FILAMENT_MANAGER_STATE", "MOVE=0"})
+        self.toolhead.dwell(1.0)
 
     def cmd_IDENTIFY(self, gcmd) -> None:
         for _, controllable in self.controllable_motions.items():
