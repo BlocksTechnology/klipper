@@ -1,5 +1,7 @@
-import math, chelper
 import logging
+import configparser
+import typing
+from functools import partial
 
 
 PLA_TEMPERATURE = 230
@@ -7,6 +9,7 @@ PETG_TEMPERATURE = 240
 ABS_TEMPERATURE = 250
 NYLON_TEMPERATURE = 270
 DEFAULT_TEMPERATURE = 250
+STATES = typing.Literal["loading", "loaded", "unloaded", "unloading", "unknown"]
 
 
 class SensorChecker:
@@ -48,6 +51,10 @@ class SensorChecker:
     ):
         """Register a sensor for checking"""
         self.sensor = self.printer.lookup_object(f"{sensor_type} {sensor_name}", None)
+        if not self.sensor:
+            raise self.printer.config_error(
+                f"Unknown Sensor of type {sensor_type} with name {sensor_name}"
+            )
 
     def set_check_interval(self, interval: float) -> None:
         """Set the check interval in seconds"""
@@ -55,9 +62,14 @@ class SensorChecker:
 
     def register_callback(self, callback, trigger: bool) -> None:
         """Register a callback to be triggered when the sensor matches the `trigger`"""
-        if callable(callback):
-            self.trigger_state = trigger
-            self.callback = callback
+        if not callable(callback):
+            logging.error(
+                "Specified callback when registering %s, on trigger %s is invalid",
+                str(self.sensor.name),
+                str(trigger),
+            )
+        self.trigger_state = trigger
+        self.callback = callback
 
     def verify_sensor(self, eventtime):
         """Periodic check of switch sensor state"""
@@ -72,11 +84,13 @@ class SensorChecker:
                 self.current_state = filament_present
                 self.min_event_systime = self.reactor.NEVER
                 self.reactor.register_callback(self._handle_trigger)
+                # self.reactor.register_async_callback(self._handle_trigger)
         self.last_check_time = eventtime
         return eventtime + self.check_interval
 
     def _handle_trigger(self):
         completion = self.reactor.register_callback(self.callback)
+        # completion = self.reactor.register_async_callback(self.callback)
         self.min_event_systime = self.reactor.monotonic() + self.event_delay
         return completion.wait()
 
@@ -142,9 +156,7 @@ class ExtruderMotions:
             eventtime = self.reactor.pause(eventtime + 1.0)
         return
 
-    def _move_extruder(
-        self, distance: float = 10.0, speed: float = 10.0, wait=True
-    ) -> None:
+    def move(self, distance: float = 10.0, speed: float = 10.0, wait=True) -> None:
         extruder_heater = self.extruder.get_heater()
         if not extruder_heater.can_extrude:
             raise self.printer.command_error("Extruder below minimum temperature")
@@ -166,6 +178,7 @@ class ExtruderMotions:
 
 class FilamentMotions:
     def __init__(self, config, name, extruder):
+        self.config = config
         self.printer = config.get_printer()
         self.name = name
         self.reactor = self.printer.get_reactor()
@@ -173,33 +186,104 @@ class FilamentMotions:
         self.gcode = self.printer.lookup_object("gcode")
         self.printer.register_event_handler("klippy:ready", self.handle_ready)
         self.extruder_motion = ExtruderMotions(config, extruder, name)
+        self.sensor_checkers = {}
+        self.state: STATES = "unknown"
+        self.timeout = config.getint("timeout", default=None, minval=10, maxval=1000)
+        self.extrude_count = 
+        self.unextrude_timer = self.reactor.register_timer(
+            self._unextrude, self.reactor.NEVER
+        )
+        self.extrude_timer = self.reactor.register_timer(
+            self.extrude, self.reactor.NEVER
+        )
 
     def handle_ready(self) -> None:
         """Handle `klippy:ready` event"""
-        self.toolhead = self.printer.lookup_object("toolhead")
+        pass
 
-    def do_cut(self) -> None:
-        self.gcode.respond_info("Cutting filament on toolhead")
-        self.toolhead.dwell(1.0)
+    def _register_sensor_callback(
+        self, sensor_type, name, trigger, interval, callback
+    ) -> None:
+        """Register a sensor with a specified trigger to run a callback"""
+        sensor_check = SensorChecker(self.config)
+        sensor_check.register_sensor(sensor_type, name)
+        sensor_check.set_check_interval(interval)
+        sensor_check.register_callback(callback, trigger)
+        self.sensor_checkers.update({name: sensor_check})
 
-    def do_unextrude(self) -> None:
-        self.gcode.respond_info("Unloading")
-        self.toolhead.dwell(1.0)
+    def _deregister_sensor(self, name) -> None:
+        """Deletes a sensor checker object by name"""
+        sensor_checker = self.sensor_checkers.pop(name)
+        del sensor_checker
 
-    def do_purge(self) -> None:
-        self.toolhead.dwell(1.0)
+    def _unextrude(self, eventtime) -> None:
+        if self.timeout:
+            if self.extrude_count >= self.timeout:
+                self.sensor_checkers.get(
+                    self.unextrude_control_sensor_name
+                ).trigger_check()
+                completion = self.reactor.register_callback(self.unextrude_end)
+                return completion.wait()
+            self.extrude_count += 1
+        self.extruder_motion.move(-1, self.speed)
+        return float(eventtime + float(1 / self.speed))
 
-    def toggle_filament_sensors(self) -> None:
-        self.toolhead.dwell(1.0)
+    def _purge(self, eventtime) -> None: ...
 
-    def do_extrude(self) -> None:
-        self.extruder_motion._move_extruder(10, 20, False)
-        self.toolhead.dwell(1.0)
+    def _extrude(self, eventtime) -> None:
+        if self.timeout:
+            if self.extrude_count >= self.timeout:
+                self.sensors_check.get(self.extrude_control_sensor_name).trigger_check()
+                completion = self.reactor.register_callback(self.extrude_end)
+                return completion.wait()
+            self.extrude_count += 1
+        self.extruder_motion.move(1, self.speed)
+        return float(eventtime + float(1 / self.speed))
 
-    def jitter(self) -> None:
-        """Makes the extruder stepper buz for identification"""
-        self.gcode.respond_info(f"Jittering {self.name}... Check for sound")
-        self.gcode.run_script_from_command(f"STEPPER_BUZZ STEPPER={self.name}\n")
+    def _handle_unload_sensor_trigger(self, eventtime) -> None:
+        if not self.sensors_check.get("unload-helper").active(): 
+            return 
+        if self.state == typing.Literal["unloading"]:
+            self.sensors_check.get("unload-helper").trigger_check()
+
+
+    def _handle_load_sensor_trigger(self, eventtime) -> None: 
+        if not self.sensors_check.get("load-helper").active(): 
+            return
+        if self.state == typing.Literal["loading"]:
+            self.sensors_check.get("load-helper").trigger_check()
+
+
+    def unload(self) -> None:
+        if self.state != typing.Literal["loaded"]:
+            raise self.gcode.error(
+                f"Cannot unload \n Extruder {self.name} is currently loading or unloaded."
+            )
+        self.state = "unloading"
+        self.extrude_count = 0
+        if self.cutter: 
+            completion = self.reactor.register_callback(self.cutter.cut())
+            completion.wait()
+        self.unextrude_timeout.update(self.reactor.NOW)
+        self.sensors_check.get("unload-helper").trigger_check()
+
+        # cut
+        # register unextrude start when cut signals that is actually cut
+        # start helper sensor verification
+        # stop unextrude on timeout or when sensor is triggered
+        # clean or end with error
+
+    def load(self) -> None:
+        if self.state != typing.Literal["unloaded"]:
+            raise self.gcode.error(
+                f"Cannot load \n Extruder {self.name} is currently loaded or unloading"
+            )
+        self.state = "loading"
+        self.extrude_count = 0
+        # start sensor verification
+        # start extrude
+        # stop extrude on cutter sensor or when timeout is reached
+        # purge or end with error
 
 
 class FilamentManager:
@@ -207,7 +291,8 @@ class FilamentManager:
         self.printer = config.get_printer()
         self.reactor = self.printer.get_reactor()
         self.gcode = self.printer.lookup_object("gcode")
-        self.toolhead = self.extruder_objects = None
+        self.toolhead = self.extruder_objects = self.bucket = None
+        self.custom_boundary = None
         self.config = config
         self.controllable_motions: dict = {}
         self.printer.register_event_handler("klippy:ready", self.handle_ready)
@@ -216,10 +301,8 @@ class FilamentManager:
             self.cmd_QUERY_CONTROLLABLES,
             "Returns the controllable filament toolheads",
         )
-        self.gcode.register_command(
-            "IDENTIFY", self.cmd_IDENTIFY, "Identify controllable filament extruders"
-        )
-        self.gcode.register_command("TEST_EXTRUDER", self.cmd_TEST_EXTRUDER, "hel")
+        self.config_bucket = config.getboolean("bucket", False)
+        self.config_custom_boundary = config.getboolean("custom_boundary", False)
 
     def handle_ready(self) -> None:
         """Handle `klippy:ready` events"""
@@ -232,6 +315,10 @@ class FilamentManager:
             self.gcode.respond_info(
                 f"Registered controllable filament extruder : {name}, {str(extruder)}"
             )
+        if self.config_bucket:
+            self.bucket = self.printer.lookup_object("bucket")
+        if self.config_custom_boundary:
+            self.custom_boundary = self.printer.lookup_object("bed_custom_bound")
 
     def conditional_homing(self) -> None:
         """Performs Homing operation, only if axes are not homed"""
@@ -270,10 +357,6 @@ class FilamentManager:
         gcode_move.cmd_RESTORE_GCODE_STATE({"FILAMENT_MANAGER_STATE", "MOVE=0"})
         self.toolhead.dwell(1.0)
 
-    def cmd_IDENTIFY(self, gcmd) -> None:
-        for _, controllable in self.controllable_motions.items():
-            controllable.jitter()
-
     def cmd_QUERY_CONTROLLABLES(self, gcmd) -> None:
         self.extruder_objects = self.printer.lookup_objects("extruder")
         for name, extruder in self.extruder_objects:
@@ -284,20 +367,20 @@ class FilamentManager:
             f"Available controllables: \n {self.controllable_motions}"
         )
 
-    def cmd_TEST_EXTRUDER(self, gcmd) -> None:
-        self.controllable_motions.get("extruder").do_extrude()
+    def cmd_UNLOAD(self, gcmd) -> None:
+        # home if needed, not during a print
+        # TODO: Check if it is printing or not
+        toolhead = self.printer.lookup_object("toolhead")
+        self.conditional_homing()
+        if self.custom_boundary:
+            self.reactor.register_callback(
+                self.custom_boundary.restore_default_boundary
+            )
+        if self.bucket:
+            self.bucket.move_to_bucket()
 
-    def cmd_LOAD_FILAMENT(self, gcmd) -> None:
-        raise NotImplementedError()
-
-    def cmd_UNLOAD_FILAMENT(self, gcmd) -> None:
-        raise NotImplementedError()
-
-    def cmd_CHANGE_FILAMENT(self, gcmd) -> None:
-        raise NotImplementedError()
-
-    # def get_status(self) -> dict:
-    #     return {motion.get_status for motion in self.controllable_motions}
+        toolhead.dwell(1.0)
+        gcmd.error("fucked up no toolhead")
 
 
 def load_config(config):
