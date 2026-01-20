@@ -517,6 +517,9 @@ class CutterSensor:
             "enabled": bool(self.sensor_enabled),
         }
 
+    def get_events(self, eventtime):
+        return {"cutter_sensor:no_filament", "cutter_sensor:filament_present"}
+
 
 def load_config_prefix(config):
     return CutterSensor(config)
