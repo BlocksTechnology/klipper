@@ -1,11 +1,10 @@
 # Belay extruder-syncing sensor support
 #
-# Copyright (C) 2023-2024 Ryan Ghosh <rghosh776@gmail.com>
+# Copyright (C) 2023-2025 Ryan Ghosh <rghosh776@gmail.com>
 #
 # This file may be distributed under the terms of the GNU GPLv3 license.
 
 DIRECTION_UPDATE_INTERVAL = 0.1
-POSITION_TIME_DIFF = 0.3
 
 
 class Belay:
@@ -15,9 +14,7 @@ class Belay:
 
         # initial type-specific setup
         type_options = ["trad_rack", "extruder_stepper"]
-        self.type = config.getchoice(
-            "extruder_type", {t: t for t in type_options}
-        )
+        self.type = config.getchoice("extruder_type", {t: t for t in type_options})
 
         self.stuck_timeout = config.getfloat("stuck_timeout", 5.0, above=1)
         self.curr_stuck_timer = 0.0
@@ -36,9 +33,7 @@ class Belay:
             self.enable_initial = True
 
         # register event handlers
-        self.printer.register_event_handler(
-            "klippy:connect", self.handle_connect
-        )
+        self.printer.register_event_handler("klippy:connect", self.handle_connect)
         self.printer.register_event_handler("klippy:ready", self.handle_ready)
         for event in enable_events:
             self.printer.register_event_handler(event, self.handle_enable)
@@ -71,13 +66,10 @@ class Belay:
         self.disable_conditions = [lambda: self.enabled]
         self.gcode = self.printer.lookup_object("gcode")
         self.toolhead = None
-        self.update_direction_timer = self.reactor.register_timer(
-            self.update_direction
-        )
-
-        self.update_stuck_timer = self.reactor.register_timer(
-            self.update_verify_stuck
-        )
+        self.update_direction_timer = self.reactor.register_timer(self.update_direction)
+        self.flush_id = True
+        self.last_flushed_e_pos = 0.0
+        self.update_stuck_timer = self.reactor.register_timer(self.update_verify_stuck)
         # register commands
         self.gcode.register_mux_command(
             "QUERY_BELAY",
@@ -151,9 +143,7 @@ class Belay:
             if not condition():
                 return
         self.enabled = True
-        self.reactor.update_timer(
-            self.update_direction_timer, self.reactor.NOW
-        )
+        self.reactor.update_timer(self.update_direction_timer, self.reactor.NOW)
         self.update_multiplier()
 
     def handle_disable(self):
@@ -161,18 +151,14 @@ class Belay:
             if not condition():
                 return
         self.reset_multiplier()
-        self.reactor.update_timer(
-            self.update_direction_timer, self.reactor.NEVER
-        )
+        self.reactor.update_timer(self.update_direction_timer, self.reactor.NEVER)
         self.enabled = False
 
     def sensor_callback(self, eventtime, state):
         self.last_state = state
         if self.enabled:
             virtual_sdcard = self.printer.lookup_object("virtual_sdcard")
-            file_pos = virtual_sdcard.get_status(eventtime).get(
-                "file_position"
-            )
+            file_pos = virtual_sdcard.get_status(eventtime).get("file_position")
             if file_pos > 1:
                 self.timeout = self.reactor.monotonic() + self.stuck_timeout
                 if self.debug_level >= 1:
@@ -202,23 +188,10 @@ class Belay:
             self.gcode.respond_info("Reset secondary extruder multiplier")
 
     def update_direction(self, eventtime):
-        mcu = self.printer.lookup_object("mcu")
-        print_time = mcu.estimated_print_time(eventtime)
-        extruder = self.toolhead.get_extruder()
-        curr_pos = extruder.find_past_position(print_time)
-        past_pos = extruder.find_past_position(
-            max(0.0, print_time - POSITION_TIME_DIFF)
-        )
-        prev_direction = self.last_direction
-        self.last_direction = curr_pos >= past_pos
-        if self.last_direction != prev_direction:
-            if self.debug_level >= 1:
-                self.gcode.respond_info(
-                    "New Belay sensor direction: %s" % self.last_direction
-                )
-
-            self.update_multiplier(False)
-
+        if self._get_lookahed().get_last():
+            self.toolhead.register_lookahead_callback(
+                lambda pt, f=self.flush_id: self.handle_flush(pt, f)
+            )
         return eventtime + DIRECTION_UPDATE_INTERVAL
 
     def handle_printing(self, eventtime) -> None:
@@ -228,8 +201,6 @@ class Belay:
     def update_verify_stuck(self, eventtime) -> float:
         idle_timeout = self.printer.lookup_object("idle_timeout")
         state = idle_timeout.get_status(eventtime).get("state")
-        virtual_sdcard = self.printer.lookup_object("virtual_sdcard")
-
         if state.lower() == "printing":
             if self.debug_level >= 1:
                 self.gcode.respond_info(
@@ -246,6 +217,36 @@ class Belay:
             self.curr_stuck_timer = 0
             return self.reactor.NEVER
 
+    def _get_lookahed(self):
+        if hasattr(self.toolhead, "lookahead"):
+            return self.toolhead.lookahead
+        else:
+            return self.toolhead.move_queue
+
+    def handle_flush(self, print_time, curr_flush_id):
+        if not self.enabled or self.flush_id != curr_flush_id:
+            return
+        last_move = self._get_lookahed().get_last()
+        e_pos = last_move().end_pos[3] if not last_move else self.last_flushed_e_pos
+        prev_dir = self.last_direction
+        self.last_direction = e_pos >= self.last_flushed_e_pos
+        if self.last_direction != prev_dir:
+            if self.debug_level >= 2:
+                self.gcode.respond_info(
+                    f"New Belay sensor direction {self.last_direction}"
+                )
+
+            self.update_multiplier(False)
+        self.flush_id = not self.flush_id
+        self.last_flushed_e_pos = e_pos
+
+    ############################################################################
+    ############################################################################
+    ############################################################################
+    ############################################################################
+    ############################################################################
+    ############################################################################
+
     cmd_QUERY_BELAY_help = "Report Belay sensor state"
 
     def cmd_QUERY_BELAY(self, gcmd):
@@ -256,14 +257,11 @@ class Belay:
         self.gcode.respond_info("belay {}: {}".format(self.name, state_info))
 
     cmd_BELAY_SET_MULTIPLIER_help = (
-        "Sets multiplier_high and/or multiplier_low. Does not persist across"
-        " restarts."
+        "Sets multiplier_high and/or multiplier_low. Does not persist across restarts."
     )
 
     def cmd_BELAY_SET_MULTIPLIER(self, gcmd):
-        self.multiplier_high = gcmd.get_float(
-            "HIGH", self.multiplier_high, minval=1.0
-        )
+        self.multiplier_high = gcmd.get_float("HIGH", self.multiplier_high, minval=1.0)
         self.multiplier_low = gcmd.get_float(
             "LOW", self.multiplier_low, minval=0.0, maxval=1.0
         )
