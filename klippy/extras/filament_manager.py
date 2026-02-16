@@ -31,10 +31,10 @@ class FilamentStates(enum.Enum):
 
 class SensorChecker:
     def __init__(self, config: KObject) -> None:
-        self.printer: KObject = config.get_printer()
-        self.reactor: KObject = self.printer.get_reactor()
+        self.printer = config.get_printer()
+        self.reactor = self.printer.get_reactor()
         self.is_enabled: bool = False
-        self.sensor: KObject | None = None
+        self.sensor = None
         self.callback: typing.Callable[..., typing.Any] | None = None
         self.trigger_state: bool = False
         self.current_state = False
@@ -114,6 +114,10 @@ class SensorChecker:
         self.min_event_systime = self.reactor.monotonic() + self.event_delay
         return completion.wait()
 
+    def active(self) -> bool:
+        """Check if this SensorChecker is currently active"""
+        return self.is_enabled
+
 
 class ExtruderMotions:
     """Class that handles extruder motions for filament loading and unloading"""
@@ -122,7 +126,7 @@ class ExtruderMotions:
         self.printer = config.get_printer()
         self.name = name
         self.reactor = self.printer.get_reactor()
-        self.gcode = self.printer.lookup_object("gcode")
+        self.gcode = None
         self.pheaters = self.extruder_heater = None
         self.travel_speed: float = config.getfloat(
             "mov_speed", default=100.0, minval=50.0, maxval=500.0
@@ -137,6 +141,7 @@ class ExtruderMotions:
     def handle_ready(self) -> None:
         """Handle `klippy:ready` events"""
         self.old_extruder = self.printer.lookup_object("toolhead").get_extruder()
+        self.gcode = self.printer.lookup_object("gcode")
 
     def _enable_extruder_stepper(self) -> bool:
         """Enable extruder motor
