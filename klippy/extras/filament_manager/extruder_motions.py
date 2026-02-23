@@ -2,11 +2,11 @@ import typing
 import logging
 
 
-class ExtruderMotions:
+class ExtruderMotion:
     """Class that handles extruder motions for filament loading and unloading"""
 
-    def __init__(self, config, extruder, name) -> None:
-        self.printer = config.get_printer()
+    def __init__(self, printer, extruder, name) -> None:
+        self.printer = printer
         self.name = name
         self.reactor = self.printer.get_reactor()
         self.gcode = None
