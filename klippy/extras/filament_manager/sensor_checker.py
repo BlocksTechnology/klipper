@@ -1,14 +1,13 @@
 import typing
-import logging
 
 
 class SensorChecker:
-    def __init__(self, config) -> None:
-        self.printer = config.get_printer()
+    def __init__(self, printer) -> None:
+        self.printer = printer
         self.reactor = self.printer.get_reactor()
         self.is_enabled: bool = False
         self.sensor = None
-        self.callback: typing.Callable[..., typing.Any] | None = None
+        self.callback: typing.Callable[[typing.Any], typing.Any] | None = None
         self.trigger_state: bool = False
         self.current_state = False
         self.check_interval: float = 1.5
@@ -45,8 +44,8 @@ class SensorChecker:
     ):
         """Register sensor for verification"""
         self.sensor = self.printer.lookup_object(f"{sensor_type} {sensor_name}", None)
-        if not self.sensor:  # pyright: ignore[reportUnknownMemberType]
-            raise self.printer.config_error(  # pyright: ignore[reportUnknownMemberType]
+        if not self.sensor:
+            raise self.printer.config_error(
                 f"Unknown Sensor {sensor_type} {sensor_name}"
             )
 
@@ -64,14 +63,19 @@ class SensorChecker:
         self.callback: typing.Callable[..., object] = callback
 
     def verify_sensor(self, eventtime: float) -> float:
-        """Periodic check of switch sensor state"""
+        """Periodically check of sensor state"""
+        # TEST:* Use the "pins" module to configure a pin on a micro-controller. This
+        # is typically done with something similar to
+        # `printer.lookup_object("pins").setup_pin("pwm",
+        # config.get("my_pin"))`. The returned object can then be commanded at
+        # run-time.
         if not self.is_enabled:
             return self.reactor.NEVER
         if not self.sensor:
             self.printer.command_error(f"Sensor check failed")
             return self.reactor.NEVER
         status = self.sensor.get_status(eventtime)
-        filament_present = status.get("filament_detected", self.trigger_state)
+        filament_present = status.get("filament_detected")
         if (filament_present != self.current_state) and (
             filament_present == self.trigger_state
         ):
