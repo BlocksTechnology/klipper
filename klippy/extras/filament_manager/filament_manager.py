@@ -1,4 +1,3 @@
-import enum
 import logging
 import typing
 
@@ -7,22 +6,6 @@ PETG_TEMPERATURE = 240
 ABS_TEMPERATURE = 250
 NYLON_TEMPERATURE = 270
 DEFAULT_TEMPERATURE = 250
-
-
-class FilamentMotionsError(Exception):
-    """Class for filament load and unload errors"""
-
-    def __init__(self, message, errors: list[str] | None = None) -> None:
-        super().__init__(message)
-        self.errors: list[str] | None = errors
-
-
-class FilamentStates(enum.Enum):
-    LOADING = "loading"
-    LOADED = "loaded"
-    UNLOADED = "unloaded"
-    UNLOADING = "unloading"
-    UNKNOWN = "unknown"
 
 
 class FilamentManager:
@@ -52,7 +35,6 @@ class FilamentManager:
         for name, extruder in self.extruder_objects:
             self.motions.update(
                 {f"{name}": FilamentMotions(self.config, name, extruder)}
-            )
             self.gcode.respond_info(
                 f"Registered controllable filament extruder : {name}, {str(extruder)}"
             )
