@@ -40,6 +40,22 @@ class FilamentManager:
             )
         if self.config_custom_boundary:
             self.custom_boundary = self.printer.lookup_object("bed_custom_bound")
+        
+
+        # TODO: Grab here the toolhead state by identifier on the variables.cfg file 
+        # We are looking for load, unload states, if loading or unloading states 
+        # are present on the variables file then we are obligated to wait untilt
+        # the state is actually load or unload to execute the new movement
+        save_vars = self.printer.lookup_object("save_variables", None)
+        if not save_vars:
+            self.state = FilamentStates.UNKNOWN
+            raise self.printer.config_error(SAVE_VARS_REQUIREMENT_MSG)
+        sv_dict = save_vars.get_status(self.reactor.monotonic())
+        variables: dict[str, typing.Any] = sv_dict.get("variables", None)
+        if not variables:
+            self.state = FilamentStates.UNKNOWN
+
+
 
     def conditional_homing(self) -> None:
         """Performs Homing operation, only if axes are not homed"""
