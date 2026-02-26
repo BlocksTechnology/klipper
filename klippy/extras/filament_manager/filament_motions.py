@@ -74,13 +74,24 @@ class FilamentMotion:
         self.printer = config.get_printer()
         self.name: str = config.get_name().split()[-1]
         self.reactor = self.printer.get_reactor()
+        self.min_event_systime = self.reactor.NEVER
         self.id: str = f"FM-{self.name}"
         self.state: FilamentStates = FilamentStates.UNKNOWN
         self.debug: int = config.getint("debug", default=0)
         self.bucket = None
         self.bucket_name: str = config.get("bucket", None)
+        self.extruder_name : str= config.get("extruder", None)
+        self.extruder = None
         self.aux_extruder_name: str = config.get("aux_extruder", None)
         self.aux_extruder = None
+        self.require_heating: bool = config.getboolean("require_heating", default=False)
+        # TODO: This is not implemented yet
+        # self.aux_extruders = []
+        # for i in range(100): 
+        #     prefix = "aux_extruder_sensor" % (i + 1,)
+        #     if config.get(prefix, None) is None: 
+        #         break
+        #     self.aux_extruders.append((prefix,))
         self.timeout: float = config.getfloat("timeout", default=40.0, minval=5.0)
         self.timeout_type: str = config.getchoice(
             "timeout_type",
@@ -100,28 +111,21 @@ class FilamentMotion:
         self.travel_speed: float = config.getfloat(
             "travel_speed", default=50.0, minval=30.0, maxval=500.0
         )
-
         # Available sensor configurations
         self.pre_gate_sensor = None
         self.pre_gate_sensor_name: str = config.get("pre_gate_sensor", default=None)
-
         self.post_gear_sensor = None
         self.post_gear_sensor_name: str = config.get("post_gear_sensor", default=None)
-
         self.post_gate_sensor = None
         self.post_gate_sensor_name: str = config.get("post_gate_sensor", default=None)
-
         self.end_gate_sensor = None
         self.end_gate_sensor_name: str = config.get("end_gate_sensor", default=None)
-
         self.sync_feedback_sensor = None
         self.sync_feedback_sensor_name: str = config.get(
             "sync_feedback_sensor", default=None
         )
-
         self.gate_sensor = None
         self.gate_sensor_name: str = config.get("gate_sensor", default=None)
-
         self.printer.register_event_handler("klippy:ready", self.handle_ready)
         self.printer.register_event_handler("klippy:connect", self.handle_connect)
 
@@ -136,7 +140,11 @@ class FilamentMotion:
             )
         if not self.gate_sensor_name and not self.timeout_type:
             raise self.printer.config_error(
-                "No gate sensors are configured. Either configure gate sensors or timeouts"
+                "No gate sensors are configured. Either specify gate sensors or timeouts"
+            )
+        if not self.extruder_name: 
+            raise self.printer.config_error(
+                "Filament motion requires extruder specification."
             )
         if self.bucket_name:
             self.bucket: KlippyObj = self.printer.lookup_object(
@@ -146,6 +154,11 @@ class FilamentMotion:
                 raise self.printer.config_error(
                     f"Configured Bucket {self.name} does not exist."
                 )
+        
+        self.extruder = self.printer.lookup_object(self.extruder_name)
+        if not self.extruder: 
+            raise self.pritner.config_error("Invalid extruder specification. Unable to load.")
+
         if self.aux_extruder_name:
             # TODO: aux extruder should also accept mmu gates
             self.aux_extruder: KlippyObj = self.printer.lookup_object(
@@ -163,6 +176,15 @@ class FilamentMotion:
             if not self.pre_gate_sensor:
                 raise self.printer.config_error(
                     f"Configured pre gate sensor {self.pre_gate_sensor_name} does not exist."
+                )
+
+        if self.post_gear_sensor_name:
+            self.post_gear_sensor: KlippyObj = self.printer.lookup_object(
+                self.post_gate_sensor_name, default=None
+            )
+            if not self.post_gear_sensor:
+                raise self.printer.config_error(
+                    f"Configured post gear sensor {self.post_gear_sensor_name} does not exist."
                 )
 
         if self.post_gate_sensor_name:
@@ -194,9 +216,21 @@ class FilamentMotion:
                     f"Configured gate sensor {self.end_gate_sensor_name} does not exist."
                 )
 
+        if self.sync_feedback_sensor_name:
+            self.sync_feedback_sensor: KlippyObj = self.printer.lookup_object(
+                self.sync_feedback_sensor_name, default=None
+            )
+            if not self.sync_feedback_sensor:
+                raise self.printer.config_error(
+                    f"Configured sync feedback sensor {self.sync_feedback_sensor_name} does not exist"
+                )
+
     def handle_ready(self) -> None:
         """Handle klippy ready event"""
-        pass
+        self.min_event_systime = self.reactor.monotonic() + 2.
+    
+    def _init_motion(self) -> None: 
+
 
     def register_sensor_callback(
         self,
