@@ -42,6 +42,8 @@ class FilamentManager:
             self.custom_boundary = self.printer.lookup_object("bed_custom_bound")
         
 
+        #TODO: load all motion objects here dynamically expose the appropriate gcodes
+
         # TODO: Grab here the toolhead state by identifier on the variables.cfg file 
         # We are looking for load, unload states, if loading or unloading states 
         # are present on the variables file then we are obligated to wait untilt

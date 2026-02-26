@@ -1,9 +1,27 @@
 import typing
 
 
+class SensorRole:
+    PRE_GATE = "pre_gate"
+    POST_GEAR = "post_gear"
+    POST_GATE = "post_gate"
+    GATE = "gate"
+    SYNC_FEEDBACK = "sync_feedback"
+    TOOLHEAD = "toolhead"
+    EXTRUDER = "extruder"
+
+    @classmethod
+    def __contains__(cls, value) -> bool:
+        return hasattr(cls, value.strip().upper())
+
+
 class SensorChecker:
-    def __init__(self, printer) -> None:
+    def __init__(self, printer, name, sensor_role, sensor_type, sensor_name) -> None:
         self.printer = printer
+        self.sensor_type = sensor_type
+        self.sensor_name = sensor_name
+        self.name = name
+        self.role = sensor_role
         self.reactor = self.printer.get_reactor()
         self.is_enabled: bool = False
         self.sensor = None
@@ -18,6 +36,7 @@ class SensorChecker:
             self.verify_sensor, self.reactor.NEVER
         )
         self.printer.register_event_handler("klippy:ready", self.handle_ready)
+        self.register_sensor(sensor_type, sensor_name)
 
     def handle_ready(self) -> None:
         """Handle `klippy:ready` event"""

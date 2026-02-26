@@ -5,7 +5,7 @@ import logging
 class ExtruderMotion:
     """Class that handles extruder motions for filament loading and unloading"""
 
-    def __init__(self, printer, extruder, name, aux_extruder) -> None:
+    def __init__(self, printer, extruder, name) -> None:
         self.printer = printer
         self.name = name
         self.reactor = self.printer.get_reactor()
@@ -13,7 +13,6 @@ class ExtruderMotion:
         self.pheaters = self.extruder_heater = None
         self.printer.register_event_handler("klippy:ready", self.handle_ready)
         self.extruder = extruder
-        self.aux_extruder = aux_extruder
         self.old_extruder = None
 
     def handle_ready(self) -> None:
