@@ -132,12 +132,13 @@ class FilamentMotion:
             if SensorRole.exists(norm_option):
                 raise config.error(f"Unknown config option {option}")
             try:
-                logging.info(option)
+                logging.info(" -> fetched option: %s" % (option))
                 opt = config.get(option)
-                logging.info("Fetched option %s" % (opt,))
+                logging.info("->Fetched option %s" % opt)
                 # literal = ast.literal_eval(config.get(option))
 
-                json.dumps(literal, separators=(",", ":"))
+                json.dumps(opt, separators=(",", ":"))
+                logging.info("-> json dumped %s" % (opt))
                 if literal in self.configured_sensors.keys():
                     raise config.error(
                         "Option %s defined multiple times." % (literal.split(":")[0])
