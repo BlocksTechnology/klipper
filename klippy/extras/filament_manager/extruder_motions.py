@@ -68,7 +68,13 @@ class ExtruderMotion:
     def unsync_aux(self) -> None:
         pass
 
-    def move(self, distance: float = 10.0, speed: float = 10.0, wait=True) -> None:
+    def move(
+        self,
+        distance: float = 10.0,
+        speed: float = 10.0,
+        acceleration: float = 50.0,
+        wait=True,
+    ) -> None:
         """Move the extruder
 
         Extrude factor is always 1
@@ -92,6 +98,6 @@ class ExtruderMotion:
         force_move.manual_move(
             self.extruder.extruder_stepper.stepper,
             npos,
-            distance,
             speed,
+            acceleration,
         )
