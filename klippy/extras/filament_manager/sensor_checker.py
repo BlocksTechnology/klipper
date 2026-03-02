@@ -16,11 +16,10 @@ class SensorRole:
 
 
 class SensorChecker:
-    def __init__(self, printer, name, sensor_role, sensor_type, sensor_name) -> None:
+    def __init__(self, printer, name, sensor_role, sensor_type) -> None:
         self.printer = printer
         self.sensor_type = sensor_type
-        self.sensor_name = sensor_name
-        self.name = name
+        self._name = name
         self.role = sensor_role
         self.reactor = self.printer.get_reactor()
         self.is_enabled: bool = False
@@ -36,7 +35,11 @@ class SensorChecker:
             self.verify_sensor, self.reactor.NEVER
         )
         self.printer.register_event_handler("klippy:ready", self.handle_ready)
-        self.register_sensor(sensor_type, sensor_name)
+        self.printer.register_event_handler("klippy:connect", self.handle_connect)
+
+    def handle_connect(self) -> None:
+        """Handle connect event"""
+        self.register_sensor(self.sensor_type, self.name)
 
     def handle_ready(self) -> None:
         """Handle `klippy:ready` event"""
@@ -67,6 +70,10 @@ class SensorChecker:
             raise self.printer.config_error(
                 f"Unknown Sensor {sensor_type} {sensor_name}"
             )
+
+    @property
+    def name(self) -> str:
+        return self._name
 
     def set_check_interval(self, interval: float) -> None:
         """Set the sensor verification interval in seconds"""
