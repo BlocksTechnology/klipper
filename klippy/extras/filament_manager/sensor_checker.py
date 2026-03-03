@@ -4,14 +4,14 @@ import typing
 class SensorRole:
     PRE_GATE = "pre_gate"
     POST_GEAR = "post_gear"
-    POST_GATE = "post_gate"
     GATE = "gate"
     SYNC_FEEDBACK = "sync_feedback"
-    TOOLHEAD = "toolhead"
+    POST_GATE = "post_gate"
     EXTRUDER = "extruder"
+    TOOLHEAD = "toolhead"
 
     @classmethod
-    def __contains__(cls, value) -> bool:
+    def exists(cls, value) -> bool:
         return hasattr(cls, value.strip().upper())
 
 
