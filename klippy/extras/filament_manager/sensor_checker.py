@@ -1,4 +1,6 @@
+from functools import partial
 import typing
+import logging
 
 
 class SensorRole:
@@ -26,7 +28,6 @@ class SensorChecker:
         self.sensor = None
         self.callback: typing.Callable[[typing.Any], typing.Any] | None = None
         self.trigger_state: bool = False
-        self.current_state = False
         self.check_interval: float = 1.5
         self.last_check_time = 0
         self.min_event_systime = self.reactor.NEVER
@@ -102,20 +103,18 @@ class SensorChecker:
             return self.reactor.NEVER
         status = self.sensor.get_status(eventtime)
         filament_present = status.get("filament_detected")
-        if (filament_present != self.current_state) and (
-            filament_present == self.trigger_state
-        ):
+        if filament_present == self.trigger_state:
             if eventtime >= self.min_event_systime:
-                self.current_state = filament_present
                 self.min_event_systime = self.reactor.NEVER
                 self.reactor.register_callback(self._handle_trigger)
         self.last_check_time: float = eventtime
         return eventtime + self.check_interval
 
-    def _handle_trigger(self):
-        completion = self.reactor.register_callback(self.callback)
+    def _handle_trigger(self, eventtime):
         self.min_event_systime = self.reactor.monotonic() + self.event_delay
-        return completion.wait()
+        completion = self.reactor.register_async_callback(
+            partial(self.callback, self.trigger_state)
+        )
 
     def active(self) -> bool:
         """Check if this SensorChecker is currently active"""
