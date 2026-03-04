@@ -31,9 +31,14 @@ class ExtruderMotion:
 
     def _force_activate(self) -> None:
         """Activate the current extruder if it's not active yet"""
-        if self.extruder != self.old_extruder:
+        toolhead = self.printer.lookup_object("toolhead")
+        # TODO: Review this next verification, we should only force activate a
+        # primary extruder never an auxiliar one
+        if (
+            self.extruder != self.old_extruder
+            and toolhead.get_extruder() != self.extruder
+        ):
             self.old_extruder = self.printer.lookup_object("toolhead").get_extruder()
-            toolhead = self.printer.lookup_object("toolhead")
             toolhead.flush_step_generation()
             last_position = self.extruder.extruder_stepper.find_past_position(
                 self.reactor.monotonic()
@@ -62,18 +67,12 @@ class ExtruderMotion:
                 return
             eventtime = self.reactor.pause(eventtime + 1.0)
 
-    def sync_aux(self) -> None:
-        pass
-
-    def unsync_aux(self) -> None:
-        pass
-
     def move(
         self,
         distance: float = 10.0,
         speed: float = 10.0,
         acceleration: float = 50.0,
-        wait=True,
+        syncd_extruder=None,
     ) -> None:
         """Move the extruder
 
@@ -84,10 +83,17 @@ class ExtruderMotion:
             speed    (float): Speed of the movement
             wait     (bool) : Wait for movements to finish. Defaults to True
         """
-        extruder_heater = self.extruder.get_heater()
-        if not extruder_heater.can_extrude:
-            raise self.printer.command_error("Extruder below minimum temperature")
-        self._force_activate()
+        # TODO: Review this verification, this is done because auxiliar exturders
+        # do not have an associated heater
+        # for now thish actually works, but i believe its not the best way
+        # to actually do this verification
+        if hasattr(self.extruder, "get_heater"):
+            extruder_heater = self.extruder.get_heater()
+            if not extruder_heater.can_extrude:
+                raise self.printer.command_error("Extruder below minimum temperature")
+            self._force_activate()
+        toolhead = self.printer.lookup_object("toolhead")
+        toolhead.flush_step_generation()
         eventtime = self.reactor.monotonic()
         force_move = self.printer.lookup_object("force_move")
         mcu = self.printer.lookup_object("mcu")
@@ -95,6 +101,16 @@ class ExtruderMotion:
         prev_position = self.extruder.find_past_position(est_print_time)
         # Ignore extrude factor always 1 in this case.
         npos = prev_position + distance
+        if syncd_extruder:
+            logging.info(type(self.extruder))
+            if hasattr(self.extruder, "get_name"):
+                logging.info("The extruder does have a name here")
+
+            syncd_extruder.extruder_stepper.sync_to_extruder(
+                syncd_extruder.extruder_name
+            )
+            toolhead.manual_move((0, 0, 0, npos), speed)
+            return
         force_move.manual_move(
             self.extruder.extruder_stepper.stepper,
             npos,
