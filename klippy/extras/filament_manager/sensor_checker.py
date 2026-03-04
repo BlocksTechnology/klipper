@@ -28,7 +28,8 @@ class SensorChecker:
         self.sensor = None
         self.callback: typing.Callable[[typing.Any], typing.Any] | None = None
         self.trigger_state: bool = False
-        self.check_interval: float = 1.5
+        self.state: bool = False
+        self.check_interval: float = 0.5
         self.last_check_time = 0
         self.min_event_systime = self.reactor.NEVER
         self.event_delay: float = 0.5
@@ -103,6 +104,8 @@ class SensorChecker:
             return self.reactor.NEVER
         status = self.sensor.get_status(eventtime)
         filament_present = status.get("filament_detected")
+        if self.state != filament_present:
+            self.state = filament_present
         if filament_present == self.trigger_state:
             if eventtime >= self.min_event_systime:
                 self.min_event_systime = self.reactor.NEVER
