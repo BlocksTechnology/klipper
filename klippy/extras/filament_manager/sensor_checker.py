@@ -105,15 +105,20 @@ class SensorChecker:
         status = self.sensor.get_status(eventtime)
         filament_present = status.get("filament_detected")
         if self.state != filament_present:
+            logging.info(f"Filament state changed {self.state}")
             self.state = filament_present
-        if filament_present == self.trigger_state:
-            if eventtime >= self.min_event_systime:
-                self.min_event_systime = self.reactor.NEVER
-                self.reactor.register_callback(self._handle_trigger)
+            # if filament_present == self.trigger_state and :
+            if filament_present == self.trigger_state:
+                if eventtime >= self.min_event_systime:
+                    self.min_event_systime = self.reactor.NEVER
+                    self.reactor.register_callback(self._handle_trigger)
         self.last_check_time: float = eventtime
         return eventtime + self.check_interval
 
     def _handle_trigger(self, eventtime):
+        logging.info(
+            f"EXTRUDER CHECKER -> Sensor triggered state: {self.trigger_state}"
+        )
         self.min_event_systime = self.reactor.monotonic() + self.event_delay
         completion = self.reactor.register_async_callback(
             partial(self.callback, self.trigger_state)
