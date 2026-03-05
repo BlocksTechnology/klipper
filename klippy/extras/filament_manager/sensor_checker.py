@@ -17,11 +17,24 @@ class SensorRole:
         return hasattr(cls, value.strip().upper())
 
 
+PRIORITY: dict[str, int] = {
+    "pre_gear": 0,
+    "post_gear": 1,
+    "gate": 2,
+    "sync_feedback": 3,
+    "post_gate": 4,
+    "extruder": 5,
+    "cutter_sensor": 5,
+    "toolhead": 6,
+}
+
+
 class SensorChecker:
     def __init__(self, printer, name, sensor_role, sensor_type) -> None:
         self.printer = printer
         self.sensor_type = sensor_type
         self._name = name
+        self._priority = PRIORITY.get(sensor_role, 0)
         self.role = sensor_role
         self.reactor = self.printer.get_reactor()
         self.is_enabled: bool = False
@@ -77,6 +90,14 @@ class SensorChecker:
     def name(self) -> str:
         return self._name
 
+    @property
+    def priority(self) -> int:
+        return self._priority
+
+    @priority.setter
+    def priority(self, value: int) -> None:
+        self._priority = value
+
     def set_check_interval(self, interval: float) -> None:
         """Set the sensor verification interval in seconds"""
         self.check_interval = max(0.1, interval)
@@ -105,9 +126,7 @@ class SensorChecker:
         status = self.sensor.get_status(eventtime)
         filament_present = status.get("filament_detected")
         if self.state != filament_present:
-            logging.info(f"Filament state changed {self.state}")
             self.state = filament_present
-            # if filament_present == self.trigger_state and :
             if filament_present == self.trigger_state:
                 if eventtime >= self.min_event_systime:
                     self.min_event_systime = self.reactor.NEVER
@@ -116,9 +135,6 @@ class SensorChecker:
         return eventtime + self.check_interval
 
     def _handle_trigger(self, eventtime):
-        logging.info(
-            f"EXTRUDER CHECKER -> Sensor triggered state: {self.trigger_state}"
-        )
         self.min_event_systime = self.reactor.monotonic() + self.event_delay
         completion = self.reactor.register_async_callback(
             partial(self.callback, self.trigger_state)

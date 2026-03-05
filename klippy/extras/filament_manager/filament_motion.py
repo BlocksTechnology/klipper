@@ -2,7 +2,7 @@ import enum
 import logging
 import typing
 
-from .sensor_checker import SensorChecker, SensorRole
+from .sensor_checker import SensorChecker, SensorRole, PRIORITY
 from .extruder_motions import ExtruderMotion
 
 SAVE_VARS_REQUIREMENT_MSG = """
@@ -36,6 +36,15 @@ class Motion(enum.Enum):
     def exists(cls, value: str) -> bool:
         """Simple checker for values"""
         return value.strip().lower() in [m.value for m in cls]
+
+
+class MotionState(enum.Enum):
+    IDLE = "idle"
+    ARMED = "armed"
+    MOVING = "moving"
+    SENSOR_CONTROL = "sensor_control"
+    FILAMENT_ENDED = "filament_ended"
+    ERROR = "error"
 
 
 MotionType: typing.TypeAlias = typing.Annotated[
@@ -79,8 +88,15 @@ class FilamentMotion:
         self.reactor = self.printer.get_reactor()
         self._mutex = self.reactor.mutex()  # Get the mutex from the reactor
         self.min_event_systime = self.reactor.NEVER
-        self.id: str = f"FM-{self.name}"
+
         self.state: FilamentStates = FilamentStates.UNKNOWN
+        self.motion_state: MotionState = MotionState.IDLE
+        self.motion_mutex = self.reactor.mutex()
+        self.active_sensor: str = ""
+        self.start_sensor: str = ""
+        self.configured_sensors: dict[str, SensorChecker] = {}
+        self._used_sensors: set[tuple[str, str]] = set()
+        self.ordered_sensor_paths: list[SensorChecker] = []
         self.can_move = False
         self.debug: int = config.getint("debug", default=0)
         self.bucket = None
@@ -92,6 +108,7 @@ class FilamentMotion:
         self.aux_extruder = None
         self.aux_emotion = None
         self.require_heating: bool = config.getboolean("require_heating", default=False)
+        self.require_purge: bool = config.getboolean("require_purge", default=False)
         self.timeout: float = config.getfloat("timeout", default=40.0, minval=5.0)
         self.timeout_type: str = config.getchoice(
             "timeout_type",
@@ -106,7 +123,7 @@ class FilamentMotion:
             note_valid=True,
         )
         self.extruder_speed: float = config.getfloat(
-            "extruder_speed", default=10.0, minval=2.0, maxval=30.0
+            "extruder_speed", default=100.0, minval=2.0, maxval=300.0
         )
         self.extruder_accel: float = config.getfloat(
             "extruder_accel", default=50.0, minval=2.0
@@ -114,9 +131,7 @@ class FilamentMotion:
         self.travel_speed: float = config.getfloat(
             "travel_speed", default=50.0, minval=30.0, maxval=500.0
         )
-        # Available sensor configurations
-        self.configured_sensors = {}
-        self._used_sensors = set()
+        # Configure available sensor configurations
         prefix = "sensor_"
         for option in config.get_prefix_options(prefix):
             norm_option = option.strip().lower()
@@ -164,18 +179,6 @@ class FilamentMotion:
         self.printer.register_event_handler("klippy:connect", self.handle_connect)
         ## Register GCODE commands
         gcode = self.printer.lookup_object("gcode")
-        gcode.register_command(
-            "MOVE",
-            self.cmd_MOVE,
-            "move the extruder with acceleration",
-        )
-        gcode.register_mux_command(
-            "RUN_MOTION",
-            "NAME",
-            self.name,
-            self.cmd_RUN_MOTION,
-            "Gcode for running individual motions",
-        )
 
     def handle_connect(self) -> None:
         """Handle klippy connect event
@@ -226,94 +229,80 @@ class FilamentMotion:
                         _callback, True if self.direction == "positive" else False
                     )
                     checker.toggle_check()
+        # Order sensors
+        self.ordered_sensor_paths = self._build_sensor_path_ord()
 
     def handle_ready(self) -> None:
         """Handle klippy ready event"""
         self.min_event_systime = self.reactor.monotonic() + 2.0
 
-    def cmd_MOVE(self, gcmd) -> None:
-        if not self.emotion:
-            raise gcmd.error("No extruder associated unable to move")
-        return
-
-    def _build_sensor_waiting_list(self) -> list[SensorChecker]:
-        ordered_sensors: list[SensorChecker] = []
-        for key in self.configured_sensors.keys():
-            # TODO: build here a list that containes the order of
-            # activating and deactivating sensors
-            # pre_gate -> <extruder_movemnt> -> post_gear -> gate -> encoder if needed -> sync_feedback -> toolhead -> <extruder> -> post-e-gears extruder
-            pass
-        return ordered_sensors
-
-    def handle_pre_gate_checker(self, trigger, eventtime) -> None:
-        self.can_move = False
-        if trigger:
-            return
-
-        pass
-
-    def handle_post_gear_checker(self, trigger, eventtime) -> None:
-        self.can_move = False
-        # if trigger:
-        #     # Then start movement until the next sensor triggers
-        #     # Stop movement there and let the other sensor handle it
-        #     return
-        # toolhead = self.printer.lookup_object("toolhead")
-        # toolhead.flush_step_generation()
-        # toolhead.dwell(1)
-
-        self.emotion.move(500, 100, 15, self.aux_extruder)
-
-    def handle_toolhead_checker(self, trigger, eventtime) -> None:
-        self.can_move = False
-        if trigger:
-            return
-        pass
-
-    def handle_extruder_checker(self, trigger, eventtime) -> None:
-        self.can_move = False
-        if trigger:
-            if "toolhead" in self.configured_sensors.keys():
-                # Now make the extruder move in a positive direction
-                # until the next sensor is hit
-                pass
-            return
-        pass
-        # Make the same negative movements as the positive ones
+    def _build_sensor_path_ord(self) -> list[SensorChecker]:
+        ordered: list[tuple[int, SensorChecker]] = []
+        for role, checker in self.configured_sensors.items():
+            priority = PRIORITY.get(role, 99)
+            ordered.append((priority, checker))
+        ordered.sort(key=lambda x: x[0])
+        result: list[SensorChecker] = [checker for _, checker in ordered]
+        if self.direction == "negative":
+            result.reverse()
+        return result
 
     def timed_move(self, eventtime):
-        if self.can_move:
+        """Executes timed movements,
+
+        Can be stopped by stopping calling `self.stop_motion`, or
+        explicitly stopping the associated timer and locking `self.motion_mutex`
+        """
+        with self.motion_mutex:
+            if not self.emotion:
+                return self.reactor.NEVER
             direction_multiplier = 1 if self.direction == "positive" else -1
-            # TODO: Add verification for timeout before the emotion movements
             self.emotion.move(
                 distance=5 * direction_multiplier,
-                speed=100,
-                acceleration=50,
+                speed=self.extruder_speed,
             )
-            return eventtime + float(5 / speed)
-        return self.reactor.NEVER
-        pass
+            return float(eventtime + float(5.0 / self.extruder_speed))
 
     def _stop_timed_move(self) -> None:
+        self.motion_state = MotionState.IDLE
+        self.motion_mutex.lock()  # Prevents triggering motions
         self.reactor.update_timer(self.move_timer, self.reactor.NEVER)
         toolhead = self.printer.lookup_object("toolhead")
         toolhead.flush_step_generation()
 
-    def run_motion(self) -> None:
-        with self._mutex:
-            if not self.emotion:
-                raise gcmd.error("No extruder associated unable to move")
-            self._init_motion()
-            self._end_motion()
+    def handle_sensor_trigger(self, trigger, eventtime) -> None:
+        """Handles generic sensor triggers"""
+        pass
 
-    def _init_motion(self) -> None:
-        self.printer.send_event(f"motion-{self.name}:start")
+    def handle_pre_gate_checker(self, trigger, eventtime) -> None:
+        """Handles `pre gate` sensor triggers"""
+        pass
 
-    def _end_motion(self) -> None:
-        self.printer.send_event(f"motion-{self.name}:end")
+    def handle_post_gear_checker(self, trigger, eventtime) -> None:
+        """Handles `post_gear` sensor triggers"""
+        self.reactor.update_timer(self.move_timer, self.reactor.NOW)
+        self.start_sensor = "post_gear"
 
-    def cmd_RUN_MOTION(self, gcmd) -> None:
-        self.run_motion()
+    def handle_toolhead_checker(self, trigger, eventtime) -> None:
+        """Handles `toolhead` sensor triggers"""
+        pass
+
+    def handle_extruder_checker(self, trigger, eventtime) -> None:
+        """Handles `extruder` sensor triggers"""
+        if self.active_sensor != "extruder":
+            self.active_sensor = "extruder"
+        self._stop_timed_move()
+
+    def start_motion(self) -> None:
+        """Start filament motion"""
+        self.motion_state = MotionState.ARMED
+
+    def stop_motion(self) -> None:
+        """Stop active filament motion"""
+        self.motion_state = MotionState.IDLE
+        self._stop_timed_move()
+
+    def calculate_sensor_dists(self) -> None: ...
 
 
 def load_config(config):
