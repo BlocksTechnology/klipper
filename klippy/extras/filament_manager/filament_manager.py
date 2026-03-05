@@ -131,5 +131,5 @@ class FilamentManager:
         }
 
 
-def load_config(config):
-    return FilamentManager(config)
+# def load_config(config):
+#     return FilamentManager(config)

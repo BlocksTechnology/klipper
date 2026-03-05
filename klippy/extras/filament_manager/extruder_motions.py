@@ -93,7 +93,7 @@ class ExtruderMotion:
                 raise self.printer.command_error("Extruder below minimum temperature")
             self._force_activate()
         toolhead = self.printer.lookup_object("toolhead")
-        toolhead.flush_step_generation()
+        # toolhead.flush_step_generation()
         eventtime = self.reactor.monotonic()
         force_move = self.printer.lookup_object("force_move")
         mcu = self.printer.lookup_object("mcu")
@@ -105,7 +105,6 @@ class ExtruderMotion:
             logging.info(type(self.extruder))
             if hasattr(self.extruder, "get_name"):
                 logging.info("The extruder does have a name here")
-
             syncd_extruder.extruder_stepper.sync_to_extruder(
                 syncd_extruder.extruder_name
             )

@@ -1,27 +1,15 @@
-import logging
 import enum
+import logging
 import typing
 
+from .sensor_checker import SensorChecker, SensorRole
+from .extruder_motions import ExtruderMotion
 
 SAVE_VARS_REQUIREMENT_MSG = """
     Filament motions requires [save_variables] object 
     declaration. Please create the variables file and
     configure the corresponding object
 """
-
-
-class SensorRole:
-    PRE_GATE = "pre_gate"
-    POST_GEAR = "post_gear"
-    POST_GATE = "post_gate"
-    GATE = "gate"
-    SYNC_FEEDBACK = "sync_feedback"
-    TOOLHEAD = "toolhead"
-    EXTRUDER = "extruder"
-
-    @classmethod
-    def exists(cls, value) -> bool:
-        return hasattr(cls, value.strip().upper())
 
 
 class FilamentMotionsError(Exception):
@@ -82,13 +70,18 @@ _Klippyobj = typing.TypeVar("_Klippyobj")
 
 
 class FilamentMotion:
+    # _mutex = threading.Lock()  # Only one motion can run at a time
+    _mutex: typing.Any
+
     def __init__(self, config) -> None:
         self.printer = config.get_printer()
         self.name: str = config.get_name().split()[-1]
         self.reactor = self.printer.get_reactor()
+        self._mutex = self.reactor.mutex()  # Get the mutex from the reactor
         self.min_event_systime = self.reactor.NEVER
         self.id: str = f"FM-{self.name}"
         self.state: FilamentStates = FilamentStates.UNKNOWN
+        self.can_move = False
         self.debug: int = config.getint("debug", default=0)
         self.bucket = None
         self.bucket_name: str = config.get("bucket", None)
@@ -106,7 +99,7 @@ class FilamentMotion:
             choices=["time", "distance"],
             note_valid=True,
         )
-        self.directions: str = config.getchoice(
+        self.direction: str = config.getchoice(
             "direction",
             default=None,
             choices=["positive", "negative"],
@@ -114,6 +107,9 @@ class FilamentMotion:
         )
         self.extruder_speed: float = config.getfloat(
             "extruder_speed", default=10.0, minval=2.0, maxval=30.0
+        )
+        self.extruder_accel: float = config.getfloat(
+            "extruder_accel", default=50.0, minval=2.0
         )
         self.travel_speed: float = config.getfloat(
             "travel_speed", default=50.0, minval=30.0, maxval=500.0
@@ -161,10 +157,11 @@ class FilamentMotion:
                     "Option '%s' in section '%s' is not valid literal: %s"
                     % (option, config.get_name(), e)
                 )
-
+        self.move_timer = self.reactor.register_timer(
+            self.timed_move, self.reactor.NEVER
+        )
         self.printer.register_event_handler("klippy:ready", self.handle_ready)
         self.printer.register_event_handler("klippy:connect", self.handle_connect)
-
         ## Register GCODE commands
         gcode = self.printer.lookup_object("gcode")
         gcode.register_command(
@@ -180,20 +177,11 @@ class FilamentMotion:
             "Gcode for running individual motions",
         )
 
-    def cmd_MOVE(self, gcmd) -> None:
-        if not self.emotion:
-            raise gcmd.error("No extruder associated unable to move")
-        speed = gcmd.get("SPEED", parser=int)
-        distance = gcmd.get("DIST", parser=int)
-        accel = gcmd.get("ACCEL", parser=int)
-        gcmd.respond_info(f"Moving extruder {speed}, {accel} and {distance}")
-        self.emotion.move(distance, speed, accel)
-
     def handle_connect(self) -> None:
         """Handle klippy connect event
         Fetch necessary objects declared at configuration
         """
-        if not self.directions:
+        if not self.direction:
             raise self.printer.config_error(
                 "Option 'direction' is mandatory. Configure to 'positive' or 'negative'"
             )
@@ -213,14 +201,12 @@ class FilamentMotion:
                 raise self.printer.config_error(
                     f"Configured Bucket {self.name} does not exist."
                 )
-
         self.extruder = self.printer.lookup_object(self.extruder_name)
         if not self.extruder:
             raise self.printer.config_error(
                 "Invalid extruder specification. Unable to load."
             )
         self.emotion = ExtruderMotion(self.printer, self.extruder, "main extruder")
-
         if self.aux_extruder_name:
             self.aux_extruder = self.printer.lookup_object(
                 f"extruder_stepper {self.aux_extruder_name}", None
@@ -230,15 +216,95 @@ class FilamentMotion:
             self.aux_emotion = ExtruderMotion(
                 self.printer, self.aux_extruder, "aux extruder"
             )
+        # Configure callbacks for each sensor role
+        for role, checker in self.configured_sensors.items():
+            _mname = f"handle_{role}_checker"
+            if hasattr(self, _mname):
+                _callback = getattr(self, _mname)
+                if callable(_callback):
+                    checker.register_callback(
+                        _callback, True if self.direction == "positive" else False
+                    )
+                    checker.toggle_check()
 
     def handle_ready(self) -> None:
         """Handle klippy ready event"""
         self.min_event_systime = self.reactor.monotonic() + 2.0
 
-    def run_motion(self) -> None:
-        self._init_motion()
+    def cmd_MOVE(self, gcmd) -> None:
+        if not self.emotion:
+            raise gcmd.error("No extruder associated unable to move")
+        return
 
-        self._end_motion()
+    def _build_sensor_waiting_list(self) -> list[SensorChecker]:
+        ordered_sensors: list[SensorChecker] = []
+        for key in self.configured_sensors.keys():
+            # TODO: build here a list that containes the order of
+            # activating and deactivating sensors
+            # pre_gate -> <extruder_movemnt> -> post_gear -> gate -> encoder if needed -> sync_feedback -> toolhead -> <extruder> -> post-e-gears extruder
+            pass
+        return ordered_sensors
+
+    def handle_pre_gate_checker(self, trigger, eventtime) -> None:
+        self.can_move = False
+        if trigger:
+            return
+
+        pass
+
+    def handle_post_gear_checker(self, trigger, eventtime) -> None:
+        self.can_move = False
+        # if trigger:
+        #     # Then start movement until the next sensor triggers
+        #     # Stop movement there and let the other sensor handle it
+        #     return
+        # toolhead = self.printer.lookup_object("toolhead")
+        # toolhead.flush_step_generation()
+        # toolhead.dwell(1)
+
+        self.emotion.move(500, 100, 15, self.aux_extruder)
+
+    def handle_toolhead_checker(self, trigger, eventtime) -> None:
+        self.can_move = False
+        if trigger:
+            return
+        pass
+
+    def handle_extruder_checker(self, trigger, eventtime) -> None:
+        self.can_move = False
+        if trigger:
+            if "toolhead" in self.configured_sensors.keys():
+                # Now make the extruder move in a positive direction
+                # until the next sensor is hit
+                pass
+            return
+        pass
+        # Make the same negative movements as the positive ones
+
+    def timed_move(self, eventtime):
+        if self.can_move:
+            direction_multiplier = 1 if self.direction == "positive" else -1
+            # TODO: Add verification for timeout before the emotion movements
+            self.emotion.move(
+                distance=5 * direction_multiplier,
+                speed=100,
+                acceleration=50,
+            )
+            return eventtime + float(5 / speed)
+        return self.reactor.NEVER
+        pass
+
+    def _stop_timed_move(self) -> None:
+        self.reactor.update_timer(self.move_timer, self.reactor.NEVER)
+        toolhead = self.printer.lookup_object("toolhead")
+        toolhead.flush_step_generation()
+
+    def run_motion(self) -> None:
+        with self._mutex:
+            if not self.emotion:
+                raise gcmd.error("No extruder associated unable to move")
+            self._init_motion()
+            self._end_motion()
 
     def _init_motion(self) -> None:
         self.printer.send_event(f"motion-{self.name}:start")
@@ -250,213 +316,5 @@ class FilamentMotion:
         self.run_motion()
 
 
-class SensorChecker:
-    def __init__(self, printer, name, sensor_role, sensor_type) -> None:
-        self.printer = printer
-        self.sensor_type = sensor_type
-        self._name = name
-        self.role = sensor_role
-        self.reactor = self.printer.get_reactor()
-        self.is_enabled: bool = False
-        self.sensor = None
-        self.callback: typing.Callable[[typing.Any], typing.Any] | None = None
-        self.trigger_state: bool = False
-        self.current_state = False
-        self.check_interval: float = 1.5
-        self.last_check_time = 0
-        self.min_event_systime = self.reactor.NEVER
-        self.event_delay: float = 0.5
-        self.check_timer = self.reactor.register_timer(
-            self.verify_sensor, self.reactor.NEVER
-        )
-        self.printer.register_event_handler("klippy:ready", self.handle_ready)
-        self.printer.register_event_handler("klippy:connect", self.handle_connect)
-
-    def handle_connect(self) -> None:
-        """Handle connect event"""
-        self.register_sensor(self.sensor_type, self.name)
-
-    def handle_ready(self) -> None:
-        """Handle `klippy:ready` event"""
-        self.min_event_systime: float = self.reactor.monotonic() + 2.0
-
-    def toggle_check(self) -> None:
-        """Toggle sensor state checking
-
-        If `sensor` has not yet been set then the method will
-        return without toggling the sensor check
-        """
-        if not self.sensor:
-            return
-        self.is_enabled = not self.is_enabled
-        if self.is_enabled and self.sensor:
-            self.reactor.update_timer(self.check_timer, self.reactor.NOW)
-            return
-        self.reactor.update_timer(self.check_timer, self.reactor.NEVER)
-
-    def register_sensor(
-        self,
-        sensor_type: str,
-        sensor_name: str,
-    ):
-        """Register sensor for verification"""
-        self.sensor = self.printer.lookup_object(f"{sensor_type} {sensor_name}", None)
-        if not self.sensor:
-            raise self.printer.config_error(
-                f"Unknown Sensor {sensor_type} {sensor_name}"
-            )
-
-    @property
-    def name(self) -> str:
-        return self._name
-
-    def set_check_interval(self, interval: float) -> None:
-        """Set the sensor verification interval in seconds"""
-        self.check_interval = max(0.1, interval)
-
-    def register_callback(
-        self, callback: typing.Callable[..., object], trigger: bool
-    ) -> None:
-        """Register a callback to be triggered when the sensor
-        matches the set `trigger`
-        """
-        self.trigger_state = trigger
-        self.callback: typing.Callable[..., object] = callback
-
-    def verify_sensor(self, eventtime: float) -> float:
-        """Periodically check of sensor state"""
-        # TEST:* Use the "pins" module to configure a pin on a micro-controller. This
-        # is typically done with something similar to
-        # `printer.lookup_object("pins").setup_pin("pwm",
-        # config.get("my_pin"))`. The returned object can then be commanded at
-        # run-time.
-        if not self.is_enabled:
-            return self.reactor.NEVER
-        if not self.sensor:
-            self.printer.command_error(f"Sensor check failed")
-            return self.reactor.NEVER
-        status = self.sensor.get_status(eventtime)
-        filament_present = status.get("filament_detected")
-        if (filament_present != self.current_state) and (
-            filament_present == self.trigger_state
-        ):
-            if eventtime >= self.min_event_systime:
-                self.current_state = filament_present
-                self.min_event_systime = self.reactor.NEVER
-                self.reactor.register_callback(self._handle_trigger)
-        self.last_check_time: float = eventtime
-        return eventtime + self.check_interval
-
-    def _handle_trigger(self):
-        completion = self.reactor.register_callback(self.callback)
-        self.min_event_systime = self.reactor.monotonic() + self.event_delay
-        return completion.wait()
-
-    def active(self) -> bool:
-        """Check if this SensorChecker is currently active"""
-        return self.is_enabled
-
-
-class ExtruderMotion:
-    """Class that handles extruder motions for filament loading and unloading"""
-
-    def __init__(self, printer, extruder, name) -> None:
-        self.printer = printer
-        self.name = name
-        self.reactor = self.printer.get_reactor()
-        self.gcode = None
-        self.pheaters = self.extruder_heater = None
-        self.printer.register_event_handler("klippy:ready", self.handle_ready)
-        self.extruder = extruder
-        self.old_extruder = None
-
-    def handle_ready(self) -> None:
-        """Handle `klippy:ready` events"""
-        self.old_extruder = self.printer.lookup_object("toolhead").get_extruder()
-        self.gcode = self.printer.lookup_object("gcode")
-
-    def _enable_extruder_stepper(self) -> bool:
-        """Enable extruder motor
-
-        Returns
-            bool : True the stepper was enabled, False otherwise
-        """
-        stepper_enable = self.printer.lookup_object("stepper_enable")
-        return stepper_enable.set_motors_enable([self.name], True)
-
-    def _force_activate(self) -> None:
-        """Activate the current extruder if it's not active yet"""
-        if self.extruder != self.old_extruder:
-            self.old_extruder = self.printer.lookup_object("toolhead").get_extruder()
-            toolhead = self.printer.lookup_object("toolhead")
-            toolhead.flush_step_generation()
-            last_position = self.extruder.extruder_stepper.find_past_position(
-                self.reactor.monotonic()
-            )
-            toolhead.set_extruder(self.extruder, last_position)
-            self.printer.send_event("extruder:activate_extruder")
-            logging.info("Activated extruder %s", str(self.extruder.get_name()))
-
-    def heat(self, temp: int, threshold: float = 0.1, wait: bool = False) -> None:
-        """Heat the heater associated with the extruder"""
-        eventtime = self.reactor.monotonic()
-        heater = self.extruder.get_heater()
-        if (
-            (temp * (1 - threshold))
-            <= heater.get_temp(eventtime)
-            <= (temp * (1 + threshold))
-        ):
-            heater.set_temp(temp)
-        while not self.printer.is_shutdown() and wait:
-            heater_temp, target_temp = heater.get_temp(eventtime)
-            if (
-                (target_temp * (1 - threshold))
-                <= heater_temp
-                <= (target_temp * (1 + threshold))
-            ):
-                return
-            eventtime = self.reactor.pause(eventtime + 1.0)
-
-    def sync_aux(self) -> None:
-        pass
-
-    def unsync_aux(self) -> None:
-        pass
-
-    def move(
-        self,
-        distance: float = 10.0,
-        speed: float = 10.0,
-        acceleration: float = 50.0,
-        wait=True,
-    ) -> None:
-        """Move the extruder
-
-        Extrude factor is always 1
-
-        Args:
-            distance (float): Move distance
-            speed    (float): Speed of the movement
-            wait     (bool) : Wait for movements to finish. Defaults to True
-        """
-        extruder_heater = self.extruder.get_heater()
-        if not extruder_heater.can_extrude:
-            raise self.printer.command_error("Extruder below minimum temperature")
-        self._force_activate()
-        eventtime = self.reactor.monotonic()
-        force_move = self.printer.lookup_object("force_move")
-        mcu = self.printer.lookup_object("mcu")
-        est_print_time = mcu.estimated_print_time(eventtime)
-        prev_position = self.extruder.find_past_position(est_print_time)
-        # Ignore extrude factor always 1 in this case.
-        npos = prev_position + distance
-        force_move.manual_move(
-            self.extruder.extruder_stepper.stepper,
-            npos,
-            speed,
-            acceleration,
-        )
-
-
-def load_config_prefix(config):
+def load_config(config):
     return FilamentMotion(config)
