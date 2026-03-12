@@ -87,8 +87,10 @@ class FilamentMotion:
         self.state: FilamentStates = FilamentStates.UNKNOWN
         self.motion_state: MotionState = MotionState.IDLE
         self.motion_mutex = self.reactor.mutex()
+
         self.active_sensor: str = ""
         self.start_sensor: str = ""
+
         self.configured_sensors: dict[str, SensorChecker] = {}
         self._used_sensors: set[tuple[str, str]] = set()
         self.ordered_sensor_paths: list[SensorChecker] = []
@@ -155,7 +157,7 @@ class FilamentMotion:
                         "Duplicate sensor role declaration: %s" % (str(sensor_role),)
                     )
                 self._used_sensors.add(sensor_key)
-                sc = SensorChecker(
+                sc: SensorChecker = SensorChecker(
                     printer=self.printer,
                     name=sensor_name,
                     sensor_role=sensor_role,
@@ -245,6 +247,32 @@ class FilamentMotion:
             result.reverse()
         return result
 
+    def _get_next_sensor(self, current: str):
+        if not self.start_sensor:
+            return self.ordered_sensor_paths[0]
+        sc = self.configured_sensors.get(current, None)
+        if not sc:
+            return
+        last_idx = self.ordered_sensor_paths.index(sc)
+        if len(self.ordered_sensor_paths) > last_idx + 1:
+            return self.ordered_sensor_paths[0]
+        return self.ordered_sensor_paths[int(last_idx + 1)]
+
+    def trigger_handler(func):
+        def wrapper(self) -> None:
+            """Changes control variables for the filament movement, queues the
+            next awaiting sensor"""
+            # Set the next sensor
+            if not self.active_sensor:
+                return
+            _nsensor = self._get_next_sensor(self.active_sensor)
+            if not _nsensor:
+                return
+            self.start_sensor = self.active_sensor
+            self.active_sensor = _nsensor.name
+
+        return wrapper
+
     def timed_move(self, eventtime):
         """Executes timed movements,
 
@@ -263,7 +291,6 @@ class FilamentMotion:
         return self.reactor.NEVER
 
     def _stop_timed_move(self) -> None:
-        self.motion_state = MotionState.IDLE
         self.motion_mutex.lock()  # Prevents triggering motions
         self.reactor.update_timer(self.move_timer, self.reactor.NEVER)
         toolhead = self.printer.lookup_object("toolhead")
