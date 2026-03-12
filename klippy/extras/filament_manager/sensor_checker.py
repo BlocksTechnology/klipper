@@ -42,10 +42,10 @@ class SensorChecker:
         self.callback: typing.Callable[[typing.Any], typing.Any] | None = None
         self.trigger_state: bool = False
         self.state: bool = False
-        self.check_interval: float = 0.5
+        self.check_interval: float = 0.005
         self.last_check_time = 0
         self.min_event_systime = self.reactor.NEVER
-        self.event_delay: float = 0.5
+        self.event_delay: float = 0.01
         self.check_timer = self.reactor.register_timer(
             self.verify_sensor, self.reactor.NEVER
         )
@@ -73,6 +73,18 @@ class SensorChecker:
             self.reactor.update_timer(self.check_timer, self.reactor.NOW)
             return
         self.reactor.update_timer(self.check_timer, self.reactor.NEVER)
+
+    def toggle_sensor(self, sensor) -> None:
+        """Toggle sensor
+
+        Enables and disables the sensor
+        """
+        pass
+        # eventtime = self.reactor.monotonic()
+        # status = self.sensor.get_status(eventtime)
+        # self.sensor.sensor_enabled =
+        # self.sensor.sensor_enabled = False
+        #
 
     def register_sensor(
         self,
@@ -102,6 +114,10 @@ class SensorChecker:
         """Set the sensor verification interval in seconds"""
         self.check_interval = max(0.1, interval)
 
+    def active(self) -> bool:
+        """Check if this SensorChecker is currently active"""
+        return self.is_enabled
+
     def register_callback(
         self, callback: typing.Callable[..., object], trigger: bool
     ) -> None:
@@ -113,11 +129,6 @@ class SensorChecker:
 
     def verify_sensor(self, eventtime: float) -> float:
         """Periodically check of sensor state"""
-        # TEST:* Use the "pins" module to configure a pin on a micro-controller. This
-        # is typically done with something similar to
-        # `printer.lookup_object("pins").setup_pin("pwm",
-        # config.get("my_pin"))`. The returned object can then be commanded at
-        # run-time.
         if not self.is_enabled:
             return self.reactor.NEVER
         if not self.sensor:
@@ -130,7 +141,7 @@ class SensorChecker:
             if filament_present == self.trigger_state:
                 if eventtime >= self.min_event_systime:
                     self.min_event_systime = self.reactor.NEVER
-                    self.reactor.register_callback(self._handle_trigger)
+                    self.reactor.register_async_callback(self._handle_trigger)
         self.last_check_time: float = eventtime
         return eventtime + self.check_interval
 
@@ -139,7 +150,3 @@ class SensorChecker:
         completion = self.reactor.register_async_callback(
             partial(self.callback, self.trigger_state)
         )
-
-    def active(self) -> bool:
-        """Check if this SensorChecker is currently active"""
-        return self.is_enabled

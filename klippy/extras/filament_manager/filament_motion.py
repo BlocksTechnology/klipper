@@ -79,16 +79,11 @@ _Klippyobj = typing.TypeVar("_Klippyobj")
 
 
 class FilamentMotion:
-    # _mutex = threading.Lock()  # Only one motion can run at a time
-    _mutex: typing.Any
-
     def __init__(self, config) -> None:
         self.printer = config.get_printer()
         self.name: str = config.get_name().split()[-1]
         self.reactor = self.printer.get_reactor()
-        self._mutex = self.reactor.mutex()  # Get the mutex from the reactor
         self.min_event_systime = self.reactor.NEVER
-
         self.state: FilamentStates = FilamentStates.UNKNOWN
         self.motion_state: MotionState = MotionState.IDLE
         self.motion_mutex = self.reactor.mutex()
@@ -177,6 +172,9 @@ class FilamentMotion:
         )
         self.printer.register_event_handler("klippy:ready", self.handle_ready)
         self.printer.register_event_handler("klippy:connect", self.handle_connect)
+        # self.printer.register_event_handler('idle_timeout:ready', _)
+        # self.printer.register_event_handler('idle_timeout:idle', _)
+        # self.printer.register_event_handler('idle_timeout:printing')
         ## Register GCODE commands
         gcode = self.printer.lookup_object("gcode")
 
@@ -262,6 +260,7 @@ class FilamentMotion:
                 speed=self.extruder_speed,
             )
             return float(eventtime + float(5.0 / self.extruder_speed))
+        return self.reactor.NEVER
 
     def _stop_timed_move(self) -> None:
         self.motion_state = MotionState.IDLE
@@ -275,13 +274,16 @@ class FilamentMotion:
         pass
 
     def handle_pre_gate_checker(self, trigger, eventtime) -> None:
-        """Handles `pre gate` sensor triggers"""
+        """Handles `pre gate` sensor trigers"""
         pass
 
     def handle_post_gear_checker(self, trigger, eventtime) -> None:
         """Handles `post_gear` sensor triggers"""
-        self.reactor.update_timer(self.move_timer, self.reactor.NOW)
-        self.start_sensor = "post_gear"
+        logging.info("Starting movement !!!")
+        if self.start_sensor != "post_gear":
+            self.motion_mutex.unlock()
+            self.reactor.update_timer(self.move_timer, self.reactor.NOW)
+            self.start_sensor = "post_gear"
 
     def handle_toolhead_checker(self, trigger, eventtime) -> None:
         """Handles `toolhead` sensor triggers"""
