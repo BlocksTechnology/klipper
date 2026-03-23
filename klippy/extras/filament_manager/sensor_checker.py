@@ -11,6 +11,7 @@ class SensorRole:
     POST_GATE = "post_gate"
     EXTRUDER = "extruder"
     TOOLHEAD = "toolhead"
+    CUTTER = "cutter"
 
     @classmethod
     def exists(cls, value) -> bool:
@@ -24,7 +25,7 @@ PRIORITY: dict[str, int] = {
     "sync_feedback": 3,
     "post_gate": 4,
     "extruder": 5,
-    "cutter_sensor": 5,
+    "cutter": 5,
     "toolhead": 6,
 }
 

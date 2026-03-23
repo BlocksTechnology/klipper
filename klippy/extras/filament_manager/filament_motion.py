@@ -247,31 +247,41 @@ class FilamentMotion:
             result.reverse()
         return result
 
-    def _get_next_sensor(self, current: str):
-        if not self.start_sensor:
+    def _get_next_sensor(self, current: str) -> SensorChecker:
+        """Get the next sensor on trigger path
+        if there is no next sensor, return the checker for
+        the last sensor on the sensor path"""
+        # If direction changes the ordered sensor path array
+        # already handles reversing the order so no need to do
+        # anything else
+        if not current:
             return self.ordered_sensor_paths[0]
-        sc = self.configured_sensors.get(current, None)
+        sc: SensorChecker | None = self.configured_sensors.get(current, None)
         if not sc:
-            return
-        last_idx = self.ordered_sensor_paths.index(sc)
-        if len(self.ordered_sensor_paths) > last_idx + 1:
-            return self.ordered_sensor_paths[0]
-        return self.ordered_sensor_paths[int(last_idx + 1)]
+            # Ended paths, return the same checker
+            return self.ordered_sensor_paths[-1]
+        index: int = self.ordered_sensor_paths.index(sc)
+        if index + 1 > len(self.ordered_sensor_paths):
+            # Return the last one if the next one doesn't exist
+            return self.ordered_sensor_paths[-1]
+        return self.ordered_sensor_paths[int(index + 1)]
 
-    def trigger_handler(func):
-        def wrapper(self) -> None:
-            """Changes control variables for the filament movement, queues the
-            next awaiting sensor"""
-            # Set the next sensor
-            if not self.active_sensor:
-                return
-            _nsensor = self._get_next_sensor(self.active_sensor)
-            if not _nsensor:
-                return
+    def handle_trigger(self) -> None:
+        """Changes control variables for the filament movement
+        queues the next awaiting sensor"""
+        ## Set the correct start and active sensors
+        _nsensor_checker: SensorChecker = self._get_next_sensor(
+            current=self.active_sensor or self.start_sensor
+        )  # simple or
+        if not self.start_sensor:
+            # In case there is no start sensor
+            _nsensor_name: str = _nsensor_checker.name
+            _asensor_name = _nsensor_name
+        else:
+            # There is a start and active sensor
             self.start_sensor = self.active_sensor
-            self.active_sensor = _nsensor.name
-
-        return wrapper
+            self.active_sensor = _nsensor_checker.name
+        self.motion_state = MotionState.ARMED
 
     def timed_move(self, eventtime):
         """Executes timed movements,
@@ -282,31 +292,28 @@ class FilamentMotion:
         with self.motion_mutex:
             if not self.emotion:
                 return self.reactor.NEVER
-            direction_multiplier = 1 if self.direction == "positive" else -1
             self.emotion.move(
-                distance=5 * direction_multiplier,
+                distance=5 * (multiplier := 1 if self.direction == "positive" else -1),
                 speed=self.extruder_speed,
             )
             return float(eventtime + float(5.0 / self.extruder_speed))
         return self.reactor.NEVER
 
-    def _stop_timed_move(self) -> None:
-        self.motion_mutex.lock()  # Prevents triggering motions
-        self.reactor.update_timer(self.move_timer, self.reactor.NEVER)
-        toolhead = self.printer.lookup_object("toolhead")
-        toolhead.flush_step_generation()
-
-    def handle_sensor_trigger(self, trigger, eventtime) -> None:
-        """Handles generic sensor triggers"""
-        pass
-
     def handle_pre_gate_checker(self, trigger, eventtime) -> None:
         """Handles `pre gate` sensor trigers"""
+        if self.start_sensor == SensorRole.PRE_GATE:
+            pass
+        if self.active_sensor == SensorRole.PRE_GATE:
+            self.handle_trigger()
         pass
 
     def handle_post_gear_checker(self, trigger, eventtime) -> None:
         """Handles `post_gear` sensor triggers"""
         logging.info("Starting movement !!!")
+        if self.start_sensor == SensorRole.POST_GEAR:
+            pass
+        if self.active_sensor == SensorRole.POST_GEAR:
+            self.handle_trigger()
         if self.start_sensor != "post_gear":
             self.motion_mutex.unlock()
             self.reactor.update_timer(self.move_timer, self.reactor.NOW)
@@ -314,17 +321,46 @@ class FilamentMotion:
 
     def handle_toolhead_checker(self, trigger, eventtime) -> None:
         """Handles `toolhead` sensor triggers"""
+        if self.start_sensor == SensorRole.TOOLHEAD:
+            pass
+        if self.active_sensor == SensorRole.TOOLHEAD:
+            self.handle_trigger()
         pass
 
     def handle_extruder_checker(self, trigger, eventtime) -> None:
         """Handles `extruder` sensor triggers"""
+        if self.start_sensor == SensorRole.EXTRUDER:
+            pass
+        if self.active_sensor == SensorRole.EXTRUDER:
+            self.handle_trigger()
         if self.active_sensor != "extruder":
             self.active_sensor = "extruder"
         self._stop_timed_move()
 
+    def handle_sync_feedback(self, trigger, eventtime) -> None:
+        if self.start_sensor == SensorRole.SYNC_FEEDBACK:
+            pass
+        if self.active_sensor == SensorRole.SYNC_FEEDBACK:
+            self.handle_trigger()
+
+    def handle_cutter_sensor(self, trigger, eventtime) -> None:
+        if SensorRole.CUTTER not in self.configured_sensors.keys():
+            return
+        if self.start_sensor == SensorRole.CUTTER:
+            pass
+
+        if self.active_sensor == SensorRole.CUTTER:
+            self.handle_trigger()
+
+    def _stop_timed_move(self) -> None:
+        self.motion_mutex.lock()  # Prevents triggering motions
+        self.reactor.update_timer(self.move_timer, self.reactor.NEVER)
+        toolhead = self.printer.lookup_object("toolhead")
+        toolhead.flush_step_generation()
+
     def start_motion(self) -> None:
         """Start filament motion"""
-        self.motion_state = MotionState.ARMED
+        self.handle_trigger()
 
     def stop_motion(self) -> None:
         """Stop active filament motion"""
