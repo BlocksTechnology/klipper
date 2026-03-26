@@ -15,3 +15,8 @@ Klipper software is Free Software. See the [license](COPYING) or read
 the [documentation](https://www.klipper3d.org/Overview.html). We
 depend on the generous support from our
 [sponsors](https://www.klipper3d.org/Sponsors.html).
+
+
+
+The current for of the Klipper firmware project includes [Happy-Hare](https://github.com/moggieuk/Happy-Hare).
+
