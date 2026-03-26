@@ -18,5 +18,5 @@ depend on the generous support from our
 
 
 
-The current for of the Klipper firmware project includes [Happy-Hare](https://github.com/moggieuk/Happy-Hare).
+The current fork of the Klipper firmware project includes [Happy-Hare](https://github.com/moggieuk/Happy-Hare).
 
