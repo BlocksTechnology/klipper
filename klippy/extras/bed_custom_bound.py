@@ -1,6 +1,4 @@
-import logging
 import typing
-from collections import OrderedDict
 
 
 class BedCustomBound:
@@ -8,21 +6,13 @@ class BedCustomBound:
         self.printer = config.get_printer()
         self.reactor = self.printer.get_reactor()
         self.gcode = self.printer.lookup_object("gcode")
-
-        # * Register event handlers
         self.printer.register_event_handler("klippy:ready", self.handle_ready)
-
-        # * Get module configs
         self.custom_boundary_x = None
         if config.getfloatlist("custom_boundary_x", None, count=2) is not None:
-            self.custom_boundary_x = config.getfloatlist(
-                "custom_boundary_x", count=2
-            )
+            self.custom_boundary_x = config.getfloatlist("custom_boundary_x", count=2)
         self.custom_boundary_y = None
         if config.getfloatlist("custom_boundary_y", None, count=2) is not None:
-            self.custom_boundary_y = config.getfloatlist(
-                "custom_boundary_y", count=2
-            )
+            self.custom_boundary_y = config.getfloatlist("custom_boundary_y", count=2)
         self.park = None
         if config.getfloatlist("park_xy", None, count=2) is not None:
             self.park = config.getfloatlist("park_xy", count=2)
@@ -30,11 +20,7 @@ class BedCustomBound:
         self.travel_speed = config.getfloat(
             "travel_speed", 100.0, above=1.0, minval=1.0, maxval=300.0
         )
-
-        # * Variables
-        self.min_event_systime = self.reactor.NEVER
         self.default_limits_x = self.default_limits_y = None
-        # * Register new gcode commands
         self.gcode.register_command(
             "SET_CUSTOM_BOUNDARY",
             self.cmd_SET_CUSTOM_BOUNDARY,
@@ -56,9 +42,7 @@ class BedCustomBound:
             return
         if not self.custom_boundary_x or not self.custom_boundary_y:
             return
-
         move_to_custom_pos = gcmd.get("MOVE_TO_PARK", False, parser=bool)
-
         self.set_custom_boundary()
         if move_to_custom_pos and self.park:
             self.toolhead.manual_move(
@@ -112,13 +96,10 @@ class BedCustomBound:
             self.custom_boundary_y[1],
         )  # Y min , Y max
         self.current_boundary = "custom"
-        return
 
     def move_to_park(self):
         if self.park:
-            self.toolhead.manual_move(
-                [self.park[0], self.park[1]], self.travel_speed
-            )
+            self.toolhead.manual_move([self.park[0], self.park[1]], self.travel_speed)
 
     def check_boundary_limits(
         self, position: typing.Tuple[float, float], bound_type: str = "default"
@@ -131,11 +112,7 @@ class BedCustomBound:
             "y": True,
         }
 
-        if (
-            bound_type == "default"
-            and self.default_limits_x
-            and self.default_limits_y
-        ):
+        if bound_type == "default" and self.default_limits_x and self.default_limits_y:
             min_limit_x, max_limit_x = (
                 self.default_limits_x[0],
                 self.default_limits_x[1],
@@ -149,11 +126,7 @@ class BedCustomBound:
             kin = self.toolhead.get_kinematics()
             min_limit_x, max_limit_x = kin.limits[0][0], kin.limits[0][1]
             min_limit_y, max_limit_y = kin.limits[1][0], kin.limits[1][1]
-        if (
-            bound_type == "custom"
-            and self.custom_boundary_x
-            and self.custom_boundary_y
-        ):
+        if bound_type == "custom" and self.custom_boundary_x and self.custom_boundary_y:
             min_limit_x, max_limit_x = (
                 self.custom_boundary_x[0],
                 self.custom_boundary_x[1],
