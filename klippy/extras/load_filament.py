@@ -22,39 +22,27 @@ class LoadFilament:
         self.cutter_object = self.cutter_name = None
         self.bucket_object = None
         self.custom_boundary_object = None
-        self.filament_switch_sensor_name = (
-            self.filament_switch_sensor_object
-        ) = None
-        self.filament_flow_sensor_name = self.filament_flow_sensor_object = (
-            None
-        )
+        self.filament_switch_sensor_name = self.filament_switch_sensor_object = None
+        self.filament_flow_sensor_name = self.filament_flow_sensor_object = None
         self.load_started: bool = False
         self.current_purge_index: int = 0
         self.travel_speed = None
         self._old_extrude_distance: float | None = None
         self.extrude_count: int = 0
 
-        self.printer.register_event_handler(
-            "klippy:connect", self.handle_connect
-        )
+        self.printer.register_event_handler("klippy:connect", self.handle_connect)
         self.printer.register_event_handler("klippy:ready", self.handle_ready)
 
         self.idex = config.getboolean("idex", False)
-        self.has_custom_boundary = config.getboolean(
-            "has_custom_boundary", False
-        )
+        self.has_custom_boundary = config.getboolean("has_custom_boundary", False)
 
         if config.get("filament_flow_sensor_name", None):
-            self.filament_flow_sensor_name = config.get(
-                "filament_flow_sensor_name"
-            )
+            self.filament_flow_sensor_name = config.get("filament_flow_sensor_name")
         if (
             config.get("filament_switch_sensor_name", None)
             and self.filament_flow_sensor_object is None
         ):
-            self.filament_switch_sensor_name = config.get(
-                "filament_switch_sensor_name"
-            )
+            self.filament_switch_sensor_name = config.get("filament_switch_sensor_name")
         if (
             config.get("cutter_sensor_name", None)
             and not self.filament_flow_sensor_object
@@ -174,9 +162,7 @@ class LoadFilament:
             self.custom_boundary_object = self.printer.lookup_object(
                 "bed_custom_bound", None
             )
-            logging.info(
-                "[LOAD FILAMENT EXTRA] Bed custom boundary extra recognized"
-            )
+            logging.info("[LOAD FILAMENT EXTRA] Bed custom boundary extra recognized")
 
     def handle_cutter_filament_present(self, eventtime=None) -> None:
         if not self.load_started or not self.cutter_object:
@@ -186,9 +172,7 @@ class LoadFilament:
         logging.info(
             "[LOAD FILAMENT EXTRA] 'filament_present' event received from cutter sensor"
         )
-        self.reactor.update_timer(
-            self.extrude_to_sensor_timer, self.reactor.NEVER
-        )
+        self.reactor.update_timer(self.extrude_to_sensor_timer, self.reactor.NEVER)
         self.reactor.update_timer(self.extrude_purge_timer, self.reactor.NOW)
         return
 
@@ -199,33 +183,23 @@ class LoadFilament:
         if self.filament_switch_sensor_object.get_status(eventtime)[
             "filament_detected"
         ]:
-            self.reactor.update_timer(
-                self.extrude_to_sensor_timer, self.reactor.NEVER
-            )
-            self.move_extruder_mm(
-                self.extruder_to_nozzle_dist, speed=30, wait=True
-            )
-            self.reactor.update_timer(
-                self.extrude_purge_timer, self.reactor.NOW
-            )
+            self.reactor.update_timer(self.extrude_to_sensor_timer, self.reactor.NEVER)
+            self.move_extruder_mm(self.extruder_to_nozzle_dist, speed=30, wait=True)
+            self.reactor.update_timer(self.extrude_purge_timer, self.reactor.NOW)
             return self.reactor.NEVER
         else:
             return eventtime + 1.50
 
     def verify_flow_sensor_state(self, eventtime):
         if self.load_started and self.filament_flow_sensor_object:
-            if self.filament_flow_sensor_object.runout_helper.get_status(
-                eventtime
-            )["filament_detected"]:
+            if self.filament_flow_sensor_object.runout_helper.get_status(eventtime)[
+                "filament_detected"
+            ]:
                 self.reactor.update_timer(
                     self.extrude_to_sensor_timer, self.reactor.NEVER
                 )
-                self.move_extruder_mm(
-                    self.extruder_to_nozzle_dist, speed=30, wait=True
-                )
-                self.reactor.update_timer(
-                    self.extrude_purge_timer, self.reactor.NOW
-                )
+                self.move_extruder_mm(self.extruder_to_nozzle_dist, speed=30, wait=True)
+                self.reactor.update_timer(self.extrude_purge_timer, self.reactor.NOW)
                 return self.reactor.NEVER
             return eventtime + 0.775
 
@@ -238,9 +212,7 @@ class LoadFilament:
                 self.move_extruder_mm(
                     self.extruder_to_nozzle_dist, speed=30, wait=True
                 )  # Extrude to the nozzle
-                self.reactor.update_timer(
-                    self.extrude_purge_timer, self.reactor.NOW
-                )
+                self.reactor.update_timer(self.extrude_purge_timer, self.reactor.NOW)
                 return self.reactor.NEVER
             self.extrude_count += 1
 
@@ -259,9 +231,7 @@ class LoadFilament:
         self.gcode.respond_info(
             f"[LOAD FILAMENT] Purging....{self.current_purge_index + 1}"
         )
-        self.move_extruder_mm(
-            distance=self.purge_distance, speed=self.purge_speed
-        )
+        self.move_extruder_mm(distance=self.purge_distance, speed=self.purge_speed)
         self.current_purge_index += 1
         return eventtime + float(self.purge_interval)
 
@@ -269,36 +239,30 @@ class LoadFilament:
         self.reactor.update_timer(self.extrude_purge_timer, self.reactor.NEVER)
 
         if self.park is not None:
-            self.toolhead.manual_move(
-                [self.park[0], self.park[1]], self.travel_speed
-            )
+            self.toolhead.manual_move([self.park[0], self.park[1]], self.travel_speed)
             self.toolhead.wait_moves()
 
-        if (
-            self.has_custom_boundary
-            and self.custom_boundary_object is not None
-        ):
+        if self.has_custom_boundary and self.custom_boundary_object is not None:
             if self.custom_boundary_object.get_status()["status"] == "default":
                 self.custom_boundary_object.set_custom_boundary()
 
         self._old_extrude_distance = None
         self.current_purge_index = 0
         self.load_started = False
-        self.printer.send_event("load_filament:end")
-        self.gcode.run_script_from_command("G91\nM400")
-        self.gcode.run_script_from_command("M83\nM400")
-        self.gcode.run_script_from_command(
-            "G92 E0.0\nM400"
-        )  # Restore extruder position
-        self.gcode.run_script_from_command("M82\nM400")
-        self.toolhead.wait_moves()
-        self.gcode.respond_info("Restoring gcode positions.")
+
+        self.gcode.run_script_from_command("G91")
+        self.gcode.run_script_from_command("M83")  # relative
+        self.gcode.run_script_from_command("G92 E0.0")  # Restore extruder position
+        self.gcode.run_script_from_command("M82\nM400")  # Absolute
         self.restore_state()
+
+        self.gcode.respond_info("Restoring gcode positions.")
         self.toolhead.wait_moves()
         self.heat_and_wait(0, wait=False)
 
         if self.idex:
             self.gcode.run_script_from_command("T0 PARK\nM400")
+        self.printer.send_event("load_filament:end")
 
     def move_extruder_mm(self, distance=10.0, speed=30.0, wait=True) -> None:
         """Move the extruder
@@ -327,9 +291,7 @@ class LoadFilament:
         """Move the toolhead to the home position (To the park position)"""
         if self.toolhead is None:
             return
-        self.toolhead.manual_move(
-            [self.park[0], self.park[1]], self.travel_speed
-        )
+        self.toolhead.manual_move([self.park[0], self.park[1]], self.travel_speed)
         self.toolhead.wait_moves()
 
     def home_needed(self):
@@ -346,9 +308,7 @@ class LoadFilament:
                 self.gcode.respond_info("Homing")
                 self.gcode.run_script_from_command("G28")
         except Exception as e:
-            logging.error(
-                f"Unable to perform home on load filament, error: {e}"
-            )
+            logging.error(f"Unable to perform home on load filament, error: {e}")
 
     def heat_and_wait(self, temp, wait: typing.Optional["bool"] = False):
         """Heats the extruder and wait.
@@ -395,9 +355,7 @@ class LoadFilament:
             self.gcode.run_script_from_command(
                 f"SAVE_DUAL_CARRIAGE_STATE NAME=load_carriage_state_{self.name}\nM400"
             )
-        self.gcode.run_script_from_command(
-            "SAVE_GCODE_STATE NAME=_LOAD_STATE\nM400"
-        )
+        self.gcode.run_script_from_command("SAVE_GCODE_STATE NAME=_LOAD_STATE\nM400")
         return True
 
     def restore_state(self):
@@ -423,9 +381,7 @@ class LoadFilament:
     cmd_LOAD_FILAMENT_HELPER = """Load Filament to the toolhead routine"""
 
     def cmd_LOAD_FILAMENT(self, gcmd):
-        temp = gcmd.get(
-            "TEMPERATURE", 220.0, parser=float, minval=210, maxval=250
-        )
+        temp = gcmd.get("TEMPERATURE", 220.0, parser=float, minval=210, maxval=250)
         try:
             if self.load_started:
                 self.gcode.respond_info("Already loading filament")
@@ -446,9 +402,9 @@ class LoadFilament:
                 else:
                     self.gcode.run_script_from_command("T1 LOAD")
 
-            self.gcode.run_script_from_command("G91\nM400")
-            self.gcode.run_script_from_command("M83\nM400")
-
+            self.gcode.run_script_from_command("G91")
+            self.gcode.run_script_from_command("M83")
+            self.gcode.run_script_from_command("G92 E0.0")
             self.extrude_count = 0
 
             if self.custom_boundary_object is not None:
@@ -473,9 +429,7 @@ class LoadFilament:
                 self.move_extruder_mm(distance=30, speed=40, wait=True)
 
             # * Actually start loading the machine
-            self.reactor.update_timer(
-                self.extrude_to_sensor_timer, self.reactor.NOW
-            )
+            self.reactor.update_timer(self.extrude_to_sensor_timer, self.reactor.NOW)
 
             if self.filament_flow_sensor_object is not None:
                 self.reactor.update_timer(
