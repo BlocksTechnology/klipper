@@ -67,7 +67,7 @@ class LoadFilament:
             "purge_interval", default=3.0, minval=0.5, maxval=10.0
         )
         self.extrude_timeout = config.getint(
-            "extrude_max_count", default=None, minval=2, maxval=1000
+            "dist_timeout", default=None, minval=2, maxval=1000
         )
 
         # * Callback Timers
