@@ -4,6 +4,8 @@ from functools import partial
 
 
 class LoadFilament:
+    steps = {"None", "heating", "pulling", "purging"}
+
     def __init__(self, config):
         self.printer = config.get_printer()
         self.reactor = self.printer.get_reactor()
@@ -25,7 +27,7 @@ class LoadFilament:
         self.min_event_systime = self.reactor.NEVER
         self.idex = config.getboolean("idex", False)
         self.has_custom_boundary = config.getboolean("has_custom_boundary", False)
-
+        self.step = "None"
         if config.get("filament_flow_sensor_name", None):
             self.filament_flow_sensor_name = config.get("filament_flow_sensor_name")
         if (
@@ -197,9 +199,11 @@ class LoadFilament:
                 return self.reactor.NEVER
             self.extrude_count += 1
         self.move_extruder_mm(distance=10, speed=self.load_speed, wait=False)
+        self.step = "pulling"
         return eventtime + float(10 / self.load_speed)
 
     def purge_extrude(self, eventtime):
+        self.step = "purging"
         if not self.load_started:
             self.gcode.respond_info(
                 "Filament loading has not started on purging loading"
@@ -237,6 +241,7 @@ class LoadFilament:
         self.heat_and_wait(0, wait=False)
         if self.idex:
             self.gcode.run_script_from_command("T0 PARK")
+        self.step = "None"
         self.printer.send_event("load_filament:end")
 
     def move_extruder_mm(self, distance=10.0, speed=30.0, wait=True) -> None:
@@ -303,6 +308,7 @@ class LoadFilament:
         pheaters = self.printer.lookup_object("heaters")
         extruder_heater = extruder.get_heater()
         pheaters.set_temperature(extruder.get_heater(), temp, False)
+        self.step = "heating"
         while not self.printer.is_shutdown() and wait:
             heater_temp, _ = extruder_heater.get_temp(eventtime)
             if heater_temp >= (temp - 5) and heater_temp <= (temp + 5):
@@ -358,26 +364,21 @@ class LoadFilament:
     def cmd_LOAD_FILAMENT(self, gcmd):
         temp = gcmd.get("TEMPERATURE", 220.0, parser=float, minval=210, maxval=250)
         try:
-            idle_timeout = self.printer.lookup_object("idle_timeout")
-            is_printing = (
-                idle_timeout.get_status(self.reactor.monotonic())["state"] == "Printing"
-            )
-            toolhead = self.printer.lookup_object("toolhead")
+            pstat = self.printer.lookup_object("print_stats")
+            pstat_state = pstat.get_status(self.reactor.monotonic())["state"]
+            is_printing = pstat_state == "printing"
             if is_printing:
                 self.printer.command_error("Cannot load while printing")
                 return
-
             if self.load_started:
-                self.gcode.respond_info("Already loading filament")
+                self.gcode.respond_info("Filament already loading")
                 return
-
             self.home_needed()
             self.save_state()
             self.disable_sensors()
             self.load_started = True
             self.printer.send_event("load_filament:start")
             self.gcode.respond_info("Filament Loading start")
-
             # * Select the head -> Meant for Idex systems
             if self.idex:
                 if gcmd.get("TOOLHEAD") == "Load_T0":
@@ -395,7 +396,6 @@ class LoadFilament:
             if self.bucket_object is not None:
                 self.bucket_object.move_to_bucket()
             self.heat_and_wait(temp, wait=True)
-            # toolhead.wait_moves()
             # * Force the motion sensor to "No Filament" state
             if self.filament_flow_sensor_object is not None:
                 self.reactor.register_callback(
@@ -419,7 +419,11 @@ class LoadFilament:
             logging.error(f"[LOADING FILAMENT ERROR]: {e}")
 
     def get_status(self, eventtime):
-        return {"state": bool(self.load_started)}
+        return {
+            "state": bool(self.load_started),
+            "step": self.step,
+            "avail_steps": list(self.steps),
+        }
 
 
 def load_config_prefix(config):

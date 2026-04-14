@@ -61,7 +61,7 @@ class CutterSensor:
             "travel_speed", 100.0, above=0.0, minval=30.0, maxval=600.0
         )
         self.cut_speed = config.getfloat(
-            "cut_speed", 100.0, above=50.0, minval=50.0, maxval=300.0
+            "cut_speed", 100.0, above=0.0, minval=2.0, maxval=300.0
         )
         self.cutter_position = config.getfloatlist("cutter_position_xy", count=2)
         self.pre_cutter_position = config.getfloatlist(

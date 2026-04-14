@@ -12,6 +12,8 @@ class UnloadFilamentError(Exception):
 
 
 class UnloadFilament:
+    steps = {"None", "heating", "pulling", "cutting"}
+
     def __init__(self, config):
         self.printer = config.get_printer()
         self.reactor = self.printer.get_reactor()
@@ -26,6 +28,7 @@ class UnloadFilament:
         self.unload_started = False
         self.unextrude_count: int = 0
         self.travel_speed = None
+        self.step = "None"
         self.printer.register_event_handler("klippy:ready", self.handle_ready)
         self.printer.register_event_handler(
             "unload_filament:end",
@@ -148,6 +151,7 @@ class UnloadFilament:
             self.gcode.respond_info("Parking toolhead 0")
             self.gcode.run_script_from_command("T0 PARK")
         self.unload_started = False
+        self.step = None
         self.printer.send_event("unload_filament:end")
         return self.reactor.NEVER
 
@@ -164,6 +168,7 @@ class UnloadFilament:
                     completion = self.reactor.register_callback(self.unload_end)
                     return completion.wait()
                 self.unextrude_count += 1
+            self.step = "pulling"
             self.move_extruder_mm(distance=-10, speed=self.unload_speed, wait=False)
             return float(eventtime + float(10 / self.unload_speed))
 
@@ -237,6 +242,7 @@ class UnloadFilament:
         pheaters = self.printer.lookup_object("heaters")
         extruder_heater = extruder.get_heater()
         pheaters.set_temperature(extruder_heater, temp, False)
+        self.step = "heating"
         while not self.printer.is_shutdown() and wait:
             heater_temp, _ = extruder_heater.get_temp(eventtime)
             if heater_temp >= (temp - 5) and heater_temp <= (temp + 5):
@@ -265,15 +271,15 @@ class UnloadFilament:
     def cmd_UNLOAD_FILAMENT(self, gcmd):
         temp = gcmd.get("TEMPERATURE", 250.0, parser=float, minval=220.0, maxval=500.0)
         try:
-            toolhead = self.printer.lookup_object("toolhead")
-            idle_timeout = self.printer.lookup_object("idle_timeout")
-            is_printing = (
-                idle_timeout.get_status(self.reactor.monotonic())["state"] == "Printing"
+            pstat = self.printer.lookup_object("print_stats")
+            pstat_state = pstat.get_status(self.reactor.monotonic())["state"]
+            is_printing = pstat_state == "printing"
+            self.gcode.respond_info(
+                f"Current idle timeout {pstat_state} state {is_printing}"
             )
             if is_printing:
                 self.gcode.respond_info("Cannot unload while printing")
                 return
-
             if self.unload_started:
                 self.gcode.respond_info("Printer already unloading filament")
                 return
@@ -285,6 +291,7 @@ class UnloadFilament:
                     self.gcode.run_script_from_command("T0 UNLOAD")
                 else:
                     self.gcode.run_script_from_command("T1 UNLOAD")
+            self.step = "None"
             self.unload_started = True
             self.printer.send_event("unload_filament:start")
             self.gcode.respond_info("[UNLOAD FILAMENT] Start")
@@ -297,8 +304,8 @@ class UnloadFilament:
             if self.bucket_object:
                 self.bucket_object.move_to_bucket()
             self.heat_extruder(temp, wait=True)
-            toolhead.wait_moves()
             if self.cutter_object:
+                self.step = "cutting"
                 self.reactor.register_callback(
                     partial(
                         self.cutter_object.cut,
@@ -328,7 +335,11 @@ class UnloadFilament:
             )
 
     def get_status(self, eventtime):
-        return {"state": bool(self.unload_started)}
+        return {
+            "state": bool(self.unload_started),
+            "step": self.step,
+            "steps": list(self.steps),
+        }
 
 
 def load_config(config):
