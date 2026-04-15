@@ -20,7 +20,7 @@ class LoadFilament:
             self.filament_switch_sensor_object
         ) = None
         self.filament_flow_sensor_name = self.filament_flow_sensor_object = None
-        self.load_started: bool = False
+        self.load_started= False
         self.current_purge_index: int = 0
         self.travel_speed = None
         self._old_extrude_distance: float | None = None
