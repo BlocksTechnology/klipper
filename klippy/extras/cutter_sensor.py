@@ -12,8 +12,6 @@
 # This file may be distributed under the terms of the GNU GPLv3 license.
 
 import logging
-import typing
-from functools import partial
 
 
 class CutterSensorError(Exception):
