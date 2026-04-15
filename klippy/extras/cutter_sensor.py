@@ -150,13 +150,10 @@ class CutterSensor:
         temperature = gcmd.get(
             "TEMPERATURE", default=220.0, parser=float, minval=200, maxval=250
         )
-        self.reactor.register_callback(
-            partial(
-                self.cut,
-                return_last_pos=return_last_position,
-                off_heaters=turn_off_heaters,
-                temp=temperature,
-            )
+        self.cut(
+            return_last_pos=return_last_position,
+            off_heaters=turn_off_heaters,
+            temp=temperature,
         )
 
     def cut(
@@ -184,7 +181,7 @@ class CutterSensor:
             )
             return
         self.prev_pos = toolhead.get_position()
-        self.gcode.run_script_from_command("G90\nM400")
+        self.gcode.run_script_from_command("G91\nM400")
         self.gcode.run_script_from_command("M83\nM400")
         self.gcode.run_script_from_command("G92 E0.0\nM400")
         self.gcode.respond_info(f"[CUTTER {self.name} sensor ] Heating extruder.")
@@ -264,7 +261,7 @@ class CutterSensor:
         except Exception as e:
             raise CutterSensorError(f"Unable to home: {e}")
 
-    def heat_extruder(self, temp, wait: typing.Optional["bool"] = True) -> None:
+    def heat_extruder(self, temp, wait: bool = True) -> None:
         """Heats the extruder and wait.
 
         Method returns when  temperature is [temp - 5 ; temp + 5].
