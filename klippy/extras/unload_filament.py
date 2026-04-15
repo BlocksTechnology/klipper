@@ -73,7 +73,8 @@ class UnloadFilament:
         self.gcode.register_command(
             "UNLOAD_FILAMENT",
             self.cmd_UNLOAD_FILAMENT,
-            "GCODE Macro to unload filament, takes into account if there is a belay and or a filament cutter with a sensor",
+            "GCODE Macro to unload filament, takes into account if"
+            "there is a belay and or a filament cutter with a sensor",
         )
 
     def handle_ready(self):
@@ -117,7 +118,8 @@ class UnloadFilament:
             return
         self.gcode.respond_info("Pulling filament out of the printer wait....")
         logging.info(
-            "Cutter reported not having filament, pulling filament out of the printer"
+            "Cutter reported not having filament,"
+            " pulling filament out of the printer"
         )
         self.reactor.update_timer(
             self.verify_switch_sensor_timer, float(self.reactor.NOW + 10.0)
@@ -126,7 +128,8 @@ class UnloadFilament:
 
     def verify_switch_sensor_state(self, eventtime):
         """Verifies if the filament is actually unloaded or not
-        The switch sensor here is assumed to be at the end of the filament pathway.
+        The switch sensor here is assumed to be at
+        the end of the filament pathway.
         """
         if not self.unload_started or not self.filament_switch_sensor_object:
             return self.reactor.NEVER
@@ -143,7 +146,8 @@ class UnloadFilament:
     def verify_flow_sensor_state(self, eventtime):
         """TODO:
 
-        Verifies the presence of filament on the **flow sensor** and reacts to this."""
+        Verifies the presence of filament on
+        the **flow sensor** and reacts to this."""
         ...
 
     def unload_end(self, eventtime=None):
@@ -260,7 +264,8 @@ class UnloadFilament:
             temp (float):
                 Target temperature in Celsius.
             wait (bool, optional):
-                Whether to wait or not for the temperature to reach the interval . Defaults to True
+                Whether to wait or not for the
+                temperature to reach the interval . Defaults to True
         """
         toolhead = self.printer.lookup_object("toolhead")
         eventtime = self.reactor.monotonic()
@@ -277,7 +282,8 @@ class UnloadFilament:
         return
 
     def save_state(self) -> None:
-        """Save gcode state and dual carriage state if the system is in IDEX configuration"""
+        """Save gcode state and dual carriage state
+        if the system is in IDEX configuration"""
         if self.idex:
             self.gcode.run_script_from_command(
                 "SAVE_DUAL_CARRIAGE_STATE NAME=unload_carriage_state"
@@ -287,7 +293,8 @@ class UnloadFilament:
         )
 
     def restore_state(self) -> None:
-        """Restore gcode state and dual carriage state if the system is in IDEX configuration"""
+        """Restore gcode state and dual carriage state
+        if the system is in IDEX configuration"""
         self.gcode.run_script_from_command(
             "RESTORE_GCODE_STATE NAME=_UNLOAD_STATE MOVE=1 MOVE_SPEED=100"
         )
@@ -315,7 +322,9 @@ class UnloadFilament:
                 return
             self.home_needed()
             self.save_state()
-            self.disable_sensors()  # So not to pause the filament switch sensor when filament is taken out
+            self.disable_sensors()
+            # So not to pause the filament switch
+            # sensor when filament is taken out
             if self.idex:
                 if gcmd.get("TOOLHEAD") == "Load_T0":
                     self.gcode.run_script_from_command("T0 UNLOAD")
@@ -355,7 +364,8 @@ class UnloadFilament:
                     )
             if self.filament_switch_sensor_object:
                 self.gcode.respond_info(
-                    "[UNLOAD] Starting filament switch sensor verification in 10 seconds"
+                    "[UNLOAD] Starting filament switch sensor"
+                    " verification in 10 seconds"
                 )
                 self.reactor.update_timer(
                     self.verify_switch_sensor_timer,
@@ -364,7 +374,8 @@ class UnloadFilament:
 
         except Exception as e:
             raise UnloadFilamentError(
-                f"[UNLOAD] Unexpected error while trying to unload filament: {e}"
+                f"[UNLOAD] Unexpected error while trying "\
+                f"to unload filament: {e}"
             )
 
     def get_status(self, eventtime):

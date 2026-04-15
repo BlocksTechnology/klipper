@@ -186,7 +186,8 @@ class CutterSensor:
         kin_status = toolhead.get_kinematics().get_status(eventtime)
         if "xyz" not in kin_status["homed_axes"]:
             self.gcode.respond_info(
-                f"[CUTTER {self.name} sensor] Printer needs to be homed for filament cutting.",
+                f"[CUTTER {self.name} sensor] Printer "
+                "needs to be homed for filament cutting.",
                 log=True,
             )
             return
@@ -259,7 +260,8 @@ class CutterSensor:
                 toolhead.wait_moves()
         except Exception as e:
             logging.info(
-                f"[CUTTER {self.name} sensor] Unable to move extruder error: {e}."
+                f"[CUTTER {self.name} sensor]"
+                f"Unable to move extruder error: {e}."
             )
 
     def home_needed(self) -> None:
@@ -289,7 +291,9 @@ class CutterSensor:
             temp (float):
                 Target temperature in Celsius.
             wait (bool, optional):
-                Weather to wait or not for the temperature to reach the interval . Defaults to True
+                Weather to wait or not for the
+                temperature to reach the interval.
+                Defaults to True
         """
         try:
             toolhead = self.printer.lookup_object("toolhead")
@@ -379,7 +383,8 @@ class CutterSensor:
             raise CutterSensorError(f"Error moving to bucket position: {e}.")
 
     def move_back(self):
-        """Moves back to the original position where the CUT gcode command was called"""
+        """Moves back to the original position
+        where the CUT gcode command was called"""
         try:
             toolhead = self.printer.lookup_object("toolhead")
             if not self.prev_pos:
@@ -445,7 +450,8 @@ class CutterSensor:
         self._exec_gcode(pause_prefix, self.runout_gcode)
 
     def _exec_gcode(self, prefix, template):
-        """Internal Executes a gcode just like what's in the klipper filament_switch_sensor.py"""
+        """Internal Executes a gcode just like
+        what's in the klipper filament_switch_sensor.py"""
 
         try:
             self.gcode.run_script(prefix + template.render() + "\nM400")

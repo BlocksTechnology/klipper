@@ -9,10 +9,16 @@ class Bucket:
         self.toolhead = None
 
         self.printer.register_event_handler("klippy:ready", self.handle_ready)
-        self.printer.register_event_handler("klippy:connect", self.handle_connect)
+        self.printer.register_event_handler(
+            "klippy:connect", self.handle_connect
+        )
 
-        self.has_custom_bed_bound = config.getboolean("has_custom_boundary", False)
-        self.bucket_position = config.getfloatlist("bucket_position", None, count=2)
+        self.has_custom_bed_bound = config.getboolean(
+            "has_custom_boundary", False
+        )
+        self.bucket_position = config.getfloatlist(
+            "bucket_position", None, count=2
+        )
         self.travel_speed = config.getfloat(
             "travel_speed", default=50.0, minval=20.0, maxval=10000.0
         )
@@ -22,7 +28,8 @@ class Bucket:
         self.gcode.register_command(
             "MOVE_TO_BUCKET",
             self.cmd_MOVE_TO_BUCKET,
-            "Gcode for moving the toolhead to the bucket position. Takes into account if there is a custom bed boundary",
+            "Gcode for moving the toolhead to the bucket position."
+            "Takes into account if there is a custom bed boundary",
         )
 
     def handle_ready(self):
@@ -40,10 +47,12 @@ class Bucket:
             return
         try:
             if self.custom_bed_bound_object:
-                _conf_bound = self.custom_bed_bound_object.check_boundary_limits(
-                    position=(
-                        self.bucket_position[0],
-                        self.bucket_position[1],
+                _conf_bound = (
+                    self.custom_bed_bound_object.check_boundary_limits(
+                        position=(
+                            self.bucket_position[0],
+                            self.bucket_position[1],
+                        )
                     )
                 )
                 if (
@@ -59,7 +68,9 @@ class Bucket:
                     self.travel_speed,
                 )
             else:
-                self.toolhead.manual_move([self.bucket_position[0]], self.travel_speed)
+                self.toolhead.manual_move(
+                    [self.bucket_position[0]], self.travel_speed
+                )
                 self.toolhead.wait_moves()
                 self.toolhead.manual_move(
                     [self.bucket_position[0], self.bucket_position[1]],
@@ -76,7 +87,8 @@ class Bucket:
                 self.custom_bed_bound_object.set_custom_boundary()
         except Exception as e:
             raise BucketMoveError(
-                f"Exception occurred when moving toolhead to bucket position: {e}"
+                "Exception occurred when moving "
+                f"toolhead to bucket position: {e}"
             )
 
     def cmd_MOVE_TO_BUCKET(self, gcmd):
@@ -85,7 +97,8 @@ class Bucket:
 
 
 class BucketMoveError(Exception):
-    "Raised when there is an exception moving the toolhead to the bucket"
+    """Raised when there is an exception
+    moving the toolhead to the bucket"""
 
     def __init__(self, message, errors=None):
         super(BucketMoveError, self).__init__(message)

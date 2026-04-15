@@ -340,7 +340,8 @@ class LoadFilament:
             temp (float):
                 Target temperature in Celsius.
             wait (bool, optional):
-                Weather to wait or not for the temperature to reach the interval.
+                Weather to wait or not for the
+                temperature to reach the interval.
                 Defaults to True
         """
         eventtime = self.reactor.monotonic()
@@ -372,7 +373,7 @@ class LoadFilament:
             self.filament_switch_sensor_object.runout_helper.sensor_enabled = 1
 
     def save_state(self):
-        """Save gcode state and dual carriage state if the system 
+        """Save gcode state and dual carriage state if the system
         is in IDEX configuration"""
         if self.idex:
             self.gcode.run_script_from_command(
@@ -382,14 +383,15 @@ class LoadFilament:
         return True
 
     def restore_state(self):
-        """Restore gcode state and dual carriage state if the system 
+        """Restore gcode state and dual carriage state if the system
         is in IDEX configuration"""
         self.gcode.run_script_from_command(
             "RESTORE_GCODE_STATE NAME=_LOAD_STATE MOVE=0"
         )
         if self.idex:
             self.gcode.run_script_from_command(
-                f"RESTORE_DUAL_CARRIAGE_STATE NAME=load_carriage_state_{self.name}"
+                "RESTORE_DUAL_CARRIAGE_STATE " \
+                f"NAME=load_carriage_state_{self.name}"
             )
 
         return True
