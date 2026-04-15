@@ -28,7 +28,7 @@ class UnloadFilament:
         ) = None
         self.idex_object = None
         self.unload_started = False
-        self.unextrude_count: int = 0
+        self.unextrude_count = 0
         self.travel_speed = None
         self.step = "None"
         self.printer.register_event_handler("klippy:ready", self.handle_ready)

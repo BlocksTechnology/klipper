@@ -21,10 +21,10 @@ class LoadFilament:
         ) = None
         self.filament_flow_sensor_name = self.filament_flow_sensor_object = None
         self.load_started= False
-        self.current_purge_index: int = 0
+        self.current_purge_index = 0
         self.travel_speed = None
         self._old_extrude_distance: float | None = None
-        self.extrude_count: int = 0
+        self.extrude_count = 0
         self.printer.register_event_handler("klippy:ready", self.handle_ready)
         self.min_event_systime = self.reactor.NEVER
         self.idex = config.getboolean("idex", False)

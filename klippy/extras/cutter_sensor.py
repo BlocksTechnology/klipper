@@ -33,7 +33,7 @@ class CutterSensor:
         self.min_event_systime = self.reactor.NEVER
         self.filament_present = False
         self.sensor_enabled = True
-        self.is_cutting: bool = False
+        self.is_cutting = False
         self.prev_pos = None
         self._extrude_timeout = 30
         self._timeout = 0
