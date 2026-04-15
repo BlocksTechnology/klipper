@@ -23,7 +23,9 @@ class UnloadFilament:
         self.bucket_object = None
         self.cutter_object = None
         self.filament_flow_sensor_object = self.filament_flow_sensor_name = None
-        self.filament_switch_sensor_object = self.filament_switch_sensor_name = None
+        self.filament_switch_sensor_object = (
+            self.filament_switch_sensor_name
+        ) = None
         self.idex_object = None
         self.unload_started = False
         self.unextrude_count: int = 0
@@ -32,10 +34,14 @@ class UnloadFilament:
         self.printer.register_event_handler("klippy:ready", self.handle_ready)
         self.printer.register_event_handler(
             "unload_filament:end",
-            lambda: self.gcode.respond_info("[UNLOAD FILAMENT] Unload Finished"),
+            lambda: self.gcode.respond_info(
+                "[UNLOAD FILAMENT] Unload Finished"
+            ),
         )
         self.idex = config.getboolean("idex", False)
-        self.has_custom_boundary = config.getboolean("has_custom_boundary", False)
+        self.has_custom_boundary = config.getboolean(
+            "has_custom_boundary", False
+        )
         self.travel_speed = config.getfloat(
             "travel_speed", 100.0, minval=50.0, maxval=500.0
         )
@@ -52,7 +58,9 @@ class UnloadFilament:
             "unload_speed", default=10.0, minval=2.0, maxval=200.0
         )
         self.cutter_name = config.get("cutter_sensor_name", None)
-        self.timeout = config.getint("timeout", default=None, minval=10, maxval=1000)
+        self.timeout = config.getint(
+            "timeout", default=None, minval=10, maxval=1000
+        )
         self.unextrude_timer = self.reactor.register_timer(
             self.unextrude, self.reactor.NEVER
         )
@@ -71,12 +79,16 @@ class UnloadFilament:
     def handle_ready(self):
         self.min_event_systime = self.reactor.monotonic() + 2.0
         if self.has_custom_boundary:
-            self.custom_boundary_object = self.printer.lookup_object("bed_custom_bound")
+            self.custom_boundary_object = self.printer.lookup_object(
+                "bed_custom_bound"
+            )
         if self.bucket:
             self.bucket_object = self.printer.lookup_object("bucket")
         if self.cutter_name:
             if (
-                self.printer.lookup_object(f"cutter_sensor {self.cutter_name}", None)
+                self.printer.lookup_object(
+                    f"cutter_sensor {self.cutter_name}", None
+                )
                 is not None
             ):
                 self.cutter_object = self.printer.lookup_object(
@@ -140,7 +152,9 @@ class UnloadFilament:
             return self.reactor.NEVER
         self.gcode.run_script_from_command("G91")
         self.gcode.run_script_from_command("M83")
-        self.gcode.run_script_from_command("G92 E0.0")  # Restore extruder position
+        self.gcode.run_script_from_command(
+            "G92 E0.0"
+        )  # Restore extruder position
         self.restore_state()
         if self.custom_boundary_object:
             self.custom_boundary_object.set_custom_boundary()
@@ -169,18 +183,26 @@ class UnloadFilament:
                     return completion.wait()
                 self.unextrude_count += 1
             self.step = "pulling"
-            self.move_extruder_mm(distance=-10, speed=self.unload_speed, wait=False)
+            self.move_extruder_mm(
+                distance=-10, speed=self.unload_speed, wait=False
+            )
             return float(eventtime + float(10 / self.unload_speed))
 
         except Exception as e:
-            raise UnloadFilamentError(f"[UNLOAD FILAMENT] Error while unloading: {e}")
+            raise UnloadFilamentError(
+                f"[UNLOAD FILAMENT] Error while unloading: {e}"
+            )
 
     def disable_sensors(self):
         if self.filament_flow_sensor_object:
-            self.filament_flow_sensor_object.runout_helper.sensor_enabled = False
+            self.filament_flow_sensor_object.runout_helper.sensor_enabled = (
+                False
+            )
 
         if self.filament_switch_sensor_object:
-            self.filament_switch_sensor_object.runout_helper.sensor_enabled = False
+            self.filament_switch_sensor_object.runout_helper.sensor_enabled = (
+                False
+            )
             self.gcode.respond_info("filament switch sensor is not enabled")
 
     def enable_sensors(self):
@@ -189,7 +211,9 @@ class UnloadFilament:
 
         if self.filament_switch_sensor_object:
             self.gcode.respond_info("filament switch sensor is now enabled")
-            self.filament_switch_sensor_object.runout_helper.sensor_enabled = True
+            self.filament_switch_sensor_object.runout_helper.sensor_enabled = (
+                True
+            )
 
     def move_extruder_mm(self, distance=10.0, speed=30.0, wait=True) -> None:
         """Move the extruder
@@ -211,7 +235,9 @@ class UnloadFilament:
             if wait:
                 toolhead.wait_moves()
         except Exception as e:
-            raise UnloadFilamentError(f"[UNLOAD FILAMENT] Error moving extruder {e}")
+            raise UnloadFilamentError(
+                f"[UNLOAD FILAMENT] Error moving extruder {e}"
+            )
 
     def home_needed(self) -> None:
         try:
@@ -256,7 +282,9 @@ class UnloadFilament:
             self.gcode.run_script_from_command(
                 "SAVE_DUAL_CARRIAGE_STATE NAME=unload_carriage_state"
             )
-        self.gcode.run_script_from_command("SAVE_GCODE_STATE NAME=_UNLOAD_STATE")
+        self.gcode.run_script_from_command(
+            "SAVE_GCODE_STATE NAME=_UNLOAD_STATE"
+        )
 
     def restore_state(self) -> None:
         """Restore gcode state and dual carriage state if the system is in IDEX configuration"""
@@ -269,7 +297,9 @@ class UnloadFilament:
             )
 
     def cmd_UNLOAD_FILAMENT(self, gcmd):
-        temp = gcmd.get("TEMPERATURE", 250.0, parser=float, minval=220.0, maxval=500.0)
+        temp = gcmd.get(
+            "TEMPERATURE", 250.0, parser=float, minval=220.0, maxval=500.0
+        )
         try:
             pstat = self.printer.lookup_object("print_stats")
             pstat_state = pstat.get_status(self.reactor.monotonic())["state"]
@@ -316,7 +346,9 @@ class UnloadFilament:
                 )
                 return
             if not self.cutter_object and self.timeout:
-                self.reactor.update_timer(self.unextrude_timer, self.reactor.NOW)
+                self.reactor.update_timer(
+                    self.unextrude_timer, self.reactor.NOW
+                )
                 if self.filament_flow_sensor_object:
                     self.reactor.update_timer(
                         self.verify_flow_sensor_timer, self.reactor.NOW
@@ -326,7 +358,8 @@ class UnloadFilament:
                     "[UNLOAD] Starting filament switch sensor verification in 10 seconds"
                 )
                 self.reactor.update_timer(
-                    self.verify_switch_sensor_timer, float(self.reactor.NOW + 15.0)
+                    self.verify_switch_sensor_timer,
+                    float(self.reactor.NOW + 15.0),
                 )
 
         except Exception as e:
