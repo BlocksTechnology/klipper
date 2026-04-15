@@ -100,7 +100,8 @@ class LoadFilament:
             "TOOLHEAD",
             self.name,
             self.cmd_LOAD_FILAMENT,
-            "GCODE MACRO to load filament, takes into account if there is a belay and or a filament cutter with a sensor.",
+            "GCODE MACRO to load filament, takes into account"
+            "if there is a belay and or a filament cutter with a sensor.",
         )
         self.gcode.register_mux_command(
             "PURGE_STOP",
@@ -128,7 +129,8 @@ class LoadFilament:
                     self.handle_cutter_filament_present,
                 )
                 logging.info(
-                    "[LOAD FILAMENT EXTRA] Cutter Sensor recognized, cutter sensor state event handlers set"
+                    "[LOAD FILAMENT EXTRA] Cutter Sensor recognized,"
+                    "cutter sensor state event handlers set"
                 )
         if self.idex:
             self.idex_object = self.printer.lookup_object("dual_carriage")
@@ -139,7 +141,8 @@ class LoadFilament:
                 default=None,
             )
             logging.info(
-                f"[LOAD FILAMENT EXTRA] Filament flow sensor {self.filament_flow_sensor_name} recognized"
+                "[LOAD FILAMENT EXTRA] Filament flow sensor "
+                f"{self.filament_flow_sensor_name} recognized"
             )
         if self.filament_switch_sensor_name:
             self.filament_switch_sensor_object = self.printer.lookup_object(
@@ -147,7 +150,8 @@ class LoadFilament:
                 default=None,
             )
             logging.info(
-                f"[LOAD FILAMENT EXTRA] Filament switch sensor {self.filament_switch_sensor_name} recognized"
+                f"[LOAD FILAMENT EXTRA] Filament switch sensor"
+                f" {self.filament_switch_sensor_name} recognized"
             )
         if self.has_custom_boundary:
             self.custom_boundary_object = self.printer.lookup_object(
@@ -336,7 +340,8 @@ class LoadFilament:
             temp (float):
                 Target temperature in Celsius.
             wait (bool, optional):
-                Weather to wait or not for the temperature to reach the interval . Defaults to True
+                Weather to wait or not for the temperature to reach the interval.
+                Defaults to True
         """
         eventtime = self.reactor.monotonic()
         toolhead = self.printer.lookup_object("toolhead")
@@ -367,7 +372,8 @@ class LoadFilament:
             self.filament_switch_sensor_object.runout_helper.sensor_enabled = 1
 
     def save_state(self):
-        """Save gcode state and dual carriage state if the system is in IDEX configuration"""
+        """Save gcode state and dual carriage state if the system 
+        is in IDEX configuration"""
         if self.idex:
             self.gcode.run_script_from_command(
                 f"SAVE_DUAL_CARRIAGE_STATE NAME=load_carriage_state_{self.name}"
@@ -376,7 +382,8 @@ class LoadFilament:
         return True
 
     def restore_state(self):
-        """Restore gcode state and dual carriage state if the system is in IDEX configuration"""
+        """Restore gcode state and dual carriage state if the system 
+        is in IDEX configuration"""
         self.gcode.run_script_from_command(
             "RESTORE_GCODE_STATE NAME=_LOAD_STATE MOVE=0"
         )
@@ -387,7 +394,8 @@ class LoadFilament:
 
         return True
 
-    cmd_PURGE_STOP_HELPER = """Helper gcode command to stop filament purging when in the Load filament routine"""
+    cmd_PURGE_STOP_HELPER = """Helper gcode command to stop filament purging"\
+            "when in the Load filament routine"""
 
     def cmd_PURGE_STOP(self, gcmd):
         if self.load_started:
