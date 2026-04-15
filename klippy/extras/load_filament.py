@@ -23,7 +23,7 @@ class LoadFilament:
         self.load_started= False
         self.current_purge_index = 0
         self.travel_speed = None
-        self._old_extrude_distance: float | None = None
+        self._old_extrude_distance = None
         self.extrude_count = 0
         self.printer.register_event_handler("klippy:ready", self.handle_ready)
         self.min_event_systime = self.reactor.NEVER
