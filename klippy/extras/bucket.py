@@ -1,4 +1,3 @@
-import logging
 import typing
 
 
@@ -10,16 +9,10 @@ class Bucket:
         self.toolhead = None
 
         self.printer.register_event_handler("klippy:ready", self.handle_ready)
-        self.printer.register_event_handler(
-            "klippy:connect", self.handle_connect
-        )
+        self.printer.register_event_handler("klippy:connect", self.handle_connect)
 
-        self.has_custom_bed_bound = config.getboolean(
-            "has_custom_boundary", False
-        )
-        self.bucket_position = config.getfloatlist(
-            "bucket_position", None, count=2
-        )
+        self.has_custom_bed_bound = config.getboolean("has_custom_boundary", False)
+        self.bucket_position = config.getfloatlist("bucket_position", None, count=2)
         self.travel_speed = config.getfloat(
             "travel_speed", default=50.0, minval=20.0, maxval=10000.0
         )
@@ -47,12 +40,10 @@ class Bucket:
             return
         try:
             if self.custom_bed_bound_object:
-                _conf_bound = (
-                    self.custom_bed_bound_object.check_boundary_limits(
-                        position=(
-                            self.bucket_position[0],
-                            self.bucket_position[1],
-                        )
+                _conf_bound = self.custom_bed_bound_object.check_boundary_limits(
+                    position=(
+                        self.bucket_position[0],
+                        self.bucket_position[1],
                     )
                 )
                 if (
@@ -61,7 +52,6 @@ class Bucket:
                     "status", ""
                 ) == "custom":
                     self.custom_bed_bound_object.restore_default_boundary()
-                    
 
             if not split:
                 self.toolhead.manual_move(
@@ -69,9 +59,7 @@ class Bucket:
                     self.travel_speed,
                 )
             else:
-                self.toolhead.manual_move(
-                    [self.bucket_position[0]], self.travel_speed
-                )
+                self.toolhead.manual_move([self.bucket_position[0]], self.travel_speed)
                 self.toolhead.wait_moves()
                 self.toolhead.manual_move(
                     [self.bucket_position[0], self.bucket_position[1]],
