@@ -409,7 +409,7 @@ class LoadFilament:
 
     def cmd_LOAD_FILAMENT(self, gcmd):
         temp = gcmd.get(
-            "TEMPERATURE", 220.0, parser=float, minval=210, maxval=250
+            "TEMPERATURE", 220.0, parser=float, minval=210, maxval=500
         )
         try:
             pstat = self.printer.lookup_object("print_stats")
