@@ -11,6 +11,7 @@ import typing
 # park_xy: 0., 500
 ###############################
 
+
 class BedCustomBound:
     def __init__(self, config):
         self.printer = config.get_printer()
@@ -60,10 +61,6 @@ class BedCustomBound:
         self.set_custom_boundary()
 
         if move_to_custom_pos and self.park:
-            self.gcode.respond_info(
-                f" PARK POSITION FLOAT CONVERTED {float(self.park[0])} {float(self.park[1])} "
-            )
-
             self.toolhead.manual_move(
                 [float(self.park[0]), float(self.park[1])],
                 self.travel_speed,
@@ -79,11 +76,10 @@ class BedCustomBound:
             return
 
         self.gcode.respond_info(
-            f"[CUSTOM BED BOUNDARY] Restoring printer boundary limits. {self.default_limits_x} {self.default_limits_y}"
+            f"[CUSTOM BED BOUNDARY] Restoring printer boundary limits"
         )
 
         kin = self.toolhead.get_kinematics()
-        self.gcode.respond_info(f"kinematics limits {kin.limits}")
         kin.limits[0] = (
             float(self.default_limits_x[0]),
             float(self.default_limits_x[1]),
@@ -105,8 +101,6 @@ class BedCustomBound:
         )
         kin = self.toolhead.get_kinematics()
 
-        self.gcode.respond_info(f"kinematics limits {kin.limits}")
-
         self.default_limits_x, self.default_limits_y = (
             kin.limits[0],
             kin.limits[1],
@@ -121,9 +115,6 @@ class BedCustomBound:
             float(self.custom_boundary_y[1]),
         )  # Y min , Y max
 
-        self.gcode.respond_info(
-            f"Custom boundaries set to X=[{self.custom_boundary_x}] Y=[{self.custom_boundary_y}]"
-        )
         self.current_boundary = "custom"
 
     def move_to_park(self):
@@ -168,12 +159,22 @@ class BedCustomBound:
         if None in (min_limit_x, max_limit_x, min_limit_y, max_limit_y):
             return None
 
-        _limits = {
-            "x": min_limit_x <= position[0] and position[0] <= max_limit_x,
-            "y": min_limit_y <= position[1] and position[1] <= max_limit_y,
-        }
+        va = all([min_limit_x, max_limit_x, min_limit_y, max_limit_y])
+        if va :
+            _limits = {
+                "x": bool(min_limit_x < position[0] < max_limit_x),
+                "y": bool(min_limit_y < position[1] < max_limit_y),
+            }
+            return _limits
+        return None
 
-        return _limits
+        # _limits =  {}
+        # if min_limit_x < position[0] or max_limit_x < position[0]:
+        #     _limits.update({"x": False})
+
+        # if min_limit_y < position[1] or max_limit_y < position[1]:
+        #     _limits.update({"y": False})
+
 
     def get_status(self, eventtime=None):
         """Get the status of the current boundary"""
