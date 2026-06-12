@@ -123,58 +123,19 @@ class BedCustomBound:
                 [self.park[0], self.park[1]], self.travel_speed
             )
 
-    def check_boundary_limits(
-        self, position: typing.Tuple[float, float], bound_type: str = "default"
-    ):
-        if not self.toolhead or not position:
-            return
+    def check_boundary_limits(self, position: tuple[float, float]):
+        """Checks if a point is outside the limits of the custom bound,
+        and inside the machine limits"""
 
-        min_limit_x = max_limit_x = min_limit_y = max_limit_y = None
-
-        if (
-            bound_type == "default"
-            and self.default_limits_x
-            and self.default_limits_y
-        ):
-            min_limit_x = float(self.default_limits_x[0])
-            max_limit_x = float(self.default_limits_x[1])
-            min_limit_y = float(self.default_limits_y[0])
-            max_limit_y = float(self.default_limits_y[1])
-        elif bound_type == "current":
-            kin = self.toolhead.get_kinematics()
-            min_limit_x = float(kin.limits[0][0])
-            max_limit_x = float(kin.limits[0][1])
-            min_limit_y = float(kin.limits[1][0])
-            max_limit_y = float(kin.limits[1][1])
-        elif (
-            bound_type == "custom"
-            and self.custom_boundary_x
-            and self.custom_boundary_y
-        ):
-            min_limit_x = float(self.custom_boundary_x[0])
-            max_limit_x = float(self.custom_boundary_x[1])
-            min_limit_y = float(self.custom_boundary_y[0])
-            max_limit_y = float(self.custom_boundary_y[1])
-
-        if None in (min_limit_x, max_limit_x, min_limit_y, max_limit_y):
-            return None
-
-        va = all([min_limit_x, max_limit_x, min_limit_y, max_limit_y])
-        if va :
-            _limits = {
-                "x": bool(min_limit_x < position[0] < max_limit_x),
-                "y": bool(min_limit_y < position[1] < max_limit_y),
-            }
-            return _limits
-        return None
-
-        # _limits =  {}
-        # if min_limit_x < position[0] or max_limit_x < position[0]:
-        #     _limits.update({"x": False})
-
-        # if min_limit_y < position[1] or max_limit_y < position[1]:
-        #     _limits.update({"y": False})
-
+        self.printer.command_error(
+            "Provided position is outside of the printers stepper limits"
+        )
+        _limits = {"x": False, "y": False}
+        if self.default_limits_x[0] <= position[0] < self.custom_boundary_x[0]:
+            _limits["x"] = True
+        if self.default_limits_y[0] <= position[1] < self.custom_boundary_y[0]:
+            _limits["y"] = False
+        return all(_limits)
 
     def get_status(self, eventtime=None):
         """Get the status of the current boundary"""
