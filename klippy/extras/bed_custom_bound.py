@@ -101,10 +101,11 @@ class BedCustomBound:
         )
         kin = self.toolhead.get_kinematics()
 
-        self.default_limits_x, self.default_limits_y = (
-            kin.limits[0],
-            kin.limits[1],
-        )
+        if not self.default_limits_x and not self.default_limits_y:
+            self.default_limits_x, self.default_limits_y = (
+                kin.limits[0],
+                kin.limits[1],
+            )
 
         kin.limits[0] = (
             float(self.custom_boundary_x[0]),
