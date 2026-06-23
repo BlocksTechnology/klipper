@@ -18,5 +18,7 @@ depend on the generous support from our
 
 
 
-The current fork of the Klipper firmware project includes [Happy-Hare](https://github.com/moggieuk/Happy-Hare).
+This fork of the Klipper firmware project includes the following software:
+
+- [Happy-Hare](https://github.com/moggieuk/Happy-Hare) : Universal MMU for Klipper.
 
