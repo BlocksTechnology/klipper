@@ -151,9 +151,7 @@ class Belay:
             if not condition():
                 return
         self.enabled = True
-        self.reactor.update_timer(
-            self.update_direction_timer, self.reactor.NOW
-        )
+        self.reactor.update_timer(self.update_direction_timer, self.reactor.NOW)
         self.update_multiplier()
 
     def handle_disable(self):
@@ -170,9 +168,7 @@ class Belay:
         self.last_state = state
         if self.enabled:
             virtual_sdcard = self.printer.lookup_object("virtual_sdcard")
-            file_pos = virtual_sdcard.get_status(eventtime).get(
-                "file_position"
-            )
+            file_pos = virtual_sdcard.get_status(eventtime).get("file_position")
             if file_pos > 1:
                 self.timeout = self.reactor.monotonic() + self.stuck_timeout
                 if self.debug_level >= 1:
@@ -233,7 +229,8 @@ class Belay:
         if state.lower() == "printing":
             if self.debug_level >= 1:
                 self.gcode.respond_info(
-                    f"Belay stuck with timeout {self.timeout} timer: {self.reactor.monotonic()}"
+                    f"Belay stuck with timeout {self.timeout} "\
+                    f"timer: {self.reactor.monotonic()}"
                 )
 
             if self.timeout > self.reactor.monotonic():
