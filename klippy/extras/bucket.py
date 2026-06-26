@@ -63,11 +63,7 @@ class Bucket:
                     self.travel_speed,
                 )
 
-            if (
-                self.custom_bed_bound_object
-                and self.custom_bed_bound_object.get_status().get("status", "")
-                == "default"
-            ):
+            if self.custom_bed_bound_object:
                 self.custom_bed_bound_object.set_custom_boundary()
         except Exception as e:
             raise BucketMoveError(
