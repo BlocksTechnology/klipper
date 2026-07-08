@@ -18,6 +18,7 @@ class BedCustomBound:
         self.reactor = self.printer.get_reactor()
         self.gcode = self.printer.lookup_object("gcode")
         self.printer.register_event_handler("klippy:ready", self.handle_ready)
+        self.debug = config.getint("debug",default=0)
         self.custom_boundary_x = None
         if config.getfloatlist("custom_boundary_x", None, count=2) is not None:
             self.custom_boundary_x = config.getfloatlist(
@@ -74,10 +75,10 @@ class BedCustomBound:
             return
         if not self.default_limits_x or not self.default_limits_y:
             return
-
-        self.gcode.respond_info(
-            f"[CUSTOM BED BOUNDARY] Restoring printer boundary limits"
-        )
+        if self.debug:
+            self.gcode.respond_info(
+                f"[CUSTOM BED BOUNDARY] Restoring printer boundary limits"
+            )
 
         kin = self.toolhead.get_kinematics()
         kin.limits[0] = (
@@ -96,9 +97,10 @@ class BedCustomBound:
             return
         if not self.custom_boundary_x or not self.custom_boundary_y:
             return
-        self.gcode.respond_info(
-            "[CUSTOM BED BOUNDARY] Setting specified custom boundary"
-        )
+        if self.debug:
+            self.gcode.respond_info(
+                "[CUSTOM BED BOUNDARY] Setting specified custom boundary"
+            )
         kin = self.toolhead.get_kinematics()
 
         if not self.default_limits_x and not self.default_limits_y:
