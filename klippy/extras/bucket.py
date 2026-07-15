@@ -47,21 +47,7 @@ class Bucket:
             return
         try:
             if self.custom_bed_bound_object:
-                _conf_bound = (
-                    self.custom_bed_bound_object.check_boundary_limits(
-                        position=(
-                            self.bucket_position[0],
-                            self.bucket_position[1],
-                        )
-                    )
-                )
-                if (
-                    not _conf_bound["x"] or not _conf_bound["y"]
-                ) and self.custom_bed_bound_object.get_status().get(
-                    "status", ""
-                ) == "custom":
-                    self.custom_bed_bound_object.restore_default_boundary()
-
+                self.custom_bed_bound_object.restore_default_boundary()
             if not split:
                 self.toolhead.manual_move(
                     [self.bucket_position[0], self.bucket_position[1]],
@@ -77,13 +63,7 @@ class Bucket:
                     self.travel_speed,
                 )
 
-            self.toolhead.wait_moves()
-
-            if (
-                self.custom_bed_bound_object
-                and self.custom_bed_bound_object.get_status().get("status", "")
-                == "default"
-            ):
+            if self.custom_bed_bound_object:
                 self.custom_bed_bound_object.set_custom_boundary()
         except Exception as e:
             raise BucketMoveError(

@@ -1,6 +1,12 @@
-import logging
-import typing
-from collections import OrderedDict
+###############################
+# Example configuration
+#
+# [bed_custom_bound]
+# custom_boundary_x: 0.0, 500.0
+# custom_boundary_y: 0.0, 500.0
+# travel_speed: 50.0
+# park_xy: 0., 500
+###############################
 
 
 class BedCustomBound:
@@ -8,11 +14,8 @@ class BedCustomBound:
         self.printer = config.get_printer()
         self.reactor = self.printer.get_reactor()
         self.gcode = self.printer.lookup_object("gcode")
-
-        # * Register event handlers
         self.printer.register_event_handler("klippy:ready", self.handle_ready)
-
-        # * Get module configs
+        self.debug = config.getint("debug", default=0)
         self.custom_boundary_x = None
         if config.getfloatlist("custom_boundary_x", None, count=2) is not None:
             self.custom_boundary_x = config.getfloatlist(
@@ -30,11 +33,7 @@ class BedCustomBound:
         self.travel_speed = config.getfloat(
             "travel_speed", 100.0, above=1.0, minval=1.0, maxval=300.0
         )
-
-        # * Variables
-        self.min_event_systime = self.reactor.NEVER
         self.default_limits_x = self.default_limits_y = None
-        # * Register new gcode commands
         self.gcode.register_command(
             "SET_CUSTOM_BOUNDARY",
             self.cmd_SET_CUSTOM_BOUNDARY,
@@ -56,13 +55,12 @@ class BedCustomBound:
             return
         if not self.custom_boundary_x or not self.custom_boundary_y:
             return
-
         move_to_custom_pos = gcmd.get("MOVE_TO_PARK", False, parser=bool)
-
         self.set_custom_boundary()
+
         if move_to_custom_pos and self.park:
             self.toolhead.manual_move(
-                [self.park[0], self.park[1]],
+                [float(self.park[0]), float(self.park[1])],
                 self.travel_speed,
             )
 
@@ -74,17 +72,19 @@ class BedCustomBound:
             return
         if not self.default_limits_x or not self.default_limits_y:
             return
-        self.gcode.respond_info(
-            "[CUSTOM BED BOUNDARY] Restoring printer boundary limits."
-        )
+        if self.debug:
+            self.gcode.respond_info(
+                f"[CUSTOM BED BOUNDARY] Restoring printer boundary limits"
+            )
+
         kin = self.toolhead.get_kinematics()
         kin.limits[0] = (
-            self.default_limits_x[0],
-            self.default_limits_y[1],
+            float(self.default_limits_x[0]),
+            float(self.default_limits_x[1]),
         )  # X min, X max
         kin.limits[1] = (
-            self.default_limits_y[0],
-            self.default_limits_y[1],
+            float(self.default_limits_y[0]),
+            float(self.default_limits_y[1]),
         )  # Y min , Y max
         self.current_boundary = "default"
         return
@@ -94,25 +94,28 @@ class BedCustomBound:
             return
         if not self.custom_boundary_x or not self.custom_boundary_y:
             return
-        self.gcode.respond_info(
-            "[CUSTOM BED BOUNDARY] Setting specified custom boundary"
-        )
+        if self.debug:
+            self.gcode.respond_info(
+                "[CUSTOM BED BOUNDARY] Setting specified custom boundary"
+            )
         kin = self.toolhead.get_kinematics()
-        self.default_limits_x, self.default_limits_y = (
-            kin.limits[0],
-            kin.limits[1],
-        )
+
+        if not self.default_limits_x and not self.default_limits_y:
+            self.default_limits_x, self.default_limits_y = (
+                kin.limits[0],
+                kin.limits[1],
+            )
 
         kin.limits[0] = (
-            self.custom_boundary_x[0],
-            self.custom_boundary_x[1],
+            float(self.custom_boundary_x[0]),
+            float(self.custom_boundary_x[1]),
         )  # X min, X max
         kin.limits[1] = (
-            self.custom_boundary_y[0],
-            self.custom_boundary_y[1],
+            float(self.custom_boundary_y[0]),
+            float(self.custom_boundary_y[1]),
         )  # Y min , Y max
+
         self.current_boundary = "custom"
-        return
 
     def move_to_park(self):
         if self.park:
@@ -120,55 +123,15 @@ class BedCustomBound:
                 [self.park[0], self.park[1]], self.travel_speed
             )
 
-    def check_boundary_limits(
-        self, position: typing.Tuple[float, float], bound_type: str = "default"
-    ):
+    def check_boundary_limits(self, position: tuple[float, float]):
+        """Checks if a position is within the current kinematic limits."""
         if not self.toolhead or not position:
-            return
-
+            return {"x": True, "y": True}
+        kin = self.toolhead.get_kinematics()
         _limits = {
-            "x": True,
-            "y": True,
+            "x": kin.limits[0][0] <= position[0] <= kin.limits[0][1],
+            "y": kin.limits[1][0] <= position[1] <= kin.limits[1][1],
         }
-
-        if (
-            bound_type == "default"
-            and self.default_limits_x
-            and self.default_limits_y
-        ):
-            min_limit_x, max_limit_x = (
-                self.default_limits_x[0],
-                self.default_limits_x[1],
-            )
-            min_limit_y, max_limit_y = (
-                self.default_limits_y[0],
-                self.default_limits_y[1],
-            )
-
-        if bound_type == "current":
-            kin = self.toolhead.get_kinematics()
-            min_limit_x, max_limit_x = kin.limits[0][0], kin.limits[0][1]
-            min_limit_y, max_limit_y = kin.limits[1][0], kin.limits[1][1]
-        if (
-            bound_type == "custom"
-            and self.custom_boundary_x
-            and self.custom_boundary_y
-        ):
-            min_limit_x, max_limit_x = (
-                self.custom_boundary_x[0],
-                self.custom_boundary_x[1],
-            )
-            min_limit_y, max_limit_y = (
-                self.custom_boundary_y[0],
-                self.custom_boundary_y[1],
-            )
-
-        if min_limit_x < position[0] or max_limit_x < position[0]:
-            _limits.update({"x": False})
-
-        if min_limit_y < position[1] or max_limit_y < position[1]:
-            _limits.update({"y": False})
-
         return _limits
 
     def get_status(self, eventtime=None):
