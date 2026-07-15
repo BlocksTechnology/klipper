@@ -21,4 +21,4 @@ depend on the generous support from our
 This fork of the Klipper firmware project includes the following software:
 
 - [Happy-Hare](https://github.com/moggieuk/Happy-Hare) : Universal MMU for Klipper.
-
+- [Beacon Module](https://beacon3d.com): Eddy current surface scanner
