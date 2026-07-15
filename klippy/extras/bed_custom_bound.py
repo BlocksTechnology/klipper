@@ -1,6 +1,3 @@
-import typing
-
-
 ###############################
 # Example configuration
 #
@@ -18,7 +15,7 @@ class BedCustomBound:
         self.reactor = self.printer.get_reactor()
         self.gcode = self.printer.lookup_object("gcode")
         self.printer.register_event_handler("klippy:ready", self.handle_ready)
-        self.debug = config.getint("debug",default=0)
+        self.debug = config.getint("debug", default=0)
         self.custom_boundary_x = None
         if config.getfloatlist("custom_boundary_x", None, count=2) is not None:
             self.custom_boundary_x = config.getfloatlist(
@@ -127,18 +124,15 @@ class BedCustomBound:
             )
 
     def check_boundary_limits(self, position: tuple[float, float]):
-        """Checks if a point is outside the limits of the custom bound,
-        and inside the machine limits"""
-
-        self.printer.command_error(
-            "Provided position is outside of the printers stepper limits"
-        )
-        _limits = {"x": False, "y": False}
-        if self.default_limits_x[0] <= position[0] < self.custom_boundary_x[0]:
-            _limits["x"] = True
-        if self.default_limits_y[0] <= position[1] < self.custom_boundary_y[0]:
-            _limits["y"] = False
-        return all(_limits)
+        """Checks if a position is within the current kinematic limits."""
+        if not self.toolhead or not position:
+            return {"x": True, "y": True}
+        kin = self.toolhead.get_kinematics()
+        _limits = {
+            "x": kin.limits[0][0] <= position[0] <= kin.limits[0][1],
+            "y": kin.limits[1][0] <= position[1] <= kin.limits[1][1],
+        }
+        return _limits
 
     def get_status(self, eventtime=None):
         """Get the status of the current boundary"""
